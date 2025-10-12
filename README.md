@@ -78,6 +78,7 @@ Begin PSVR subsystem research ⏳
 🔹 Credits
 
 Lead Developer: DiverseBloom780
+
 System Engineer: Manus (Autonomous Assistant Agent)
 Acknowledgments:
 
