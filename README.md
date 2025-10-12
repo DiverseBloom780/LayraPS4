@@ -117,22 +117,13 @@ File mounting and VFS logic
 Firmware base: 11.0 modules.
 
 Core designed for modular device support:
-
 Controllers
-
 PSVR headset
-
 Lightguns
-
 Portals
-
 Maintain isolation between:
-
 Loader (PKG/VFS subsystem)
-
 Emulator core (CPU/GPU/SPU)
-
 Device emulation (VR, portals, input)
-
 Interface (ImGui layer) 
 <img width="1024" height="1536" alt="LayraPS4" src="https://github.com/user-attachments/assets/8b13cc98-3ad9-4dfa-9379-b78e70e2be0d" />
