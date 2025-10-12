@@ -43,35 +43,6 @@ Public open-source emulators (such as ShadPS4, RPCS3, or Kyty) are studied **onl
 
 ---
 
-## 🔹 Project Structure
-
-LayraPS4/
-├── src/
-│ ├── core/ # Emulator core systems (CPU, memory, scheduler)
-│ ├── pkg/ # PKG parsing, decryption, and mounting
-│ ├── vfs/ # Virtual filesystem and mount manager
-│ ├── portals/ # Virtual portals subsystem
-│ │ ├── portal_base.c
-│ │ ├── portal_skylanders.c
-│ │ ├── portal_infinity.c
-│ │ ├── portal_legodimensions.c
-│ │ └── figures/ # Virtual figure data and character files
-│ ├── ui/ # ImGui PS4-style interface
-│ └── utils/ # Helpers and shared modules
-├── docs/
-│ ├── architecture.md
-│ ├── pkg_format.md
-│ ├── vfs_structure.md
-│ ├── portals_protocols.md
-│ └── roadmap.md
-├── CMakeLists.txt
-└── README.md
-
-yaml
-Copy code
-
----
-
 ## 🔹 Virtual Portal Subsystem (Phase 2)
 
 LayraPS4 will include virtual emulation of the following devices:
