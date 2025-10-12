@@ -80,6 +80,7 @@ Begin PSVR subsystem research ⏳
 Lead Developer: DiverseBloom780
 
 System Engineer: Manus (Autonomous Assistant Agent)
+
 Acknowledgments:
 
 Open-source emulator communities for technical references.
