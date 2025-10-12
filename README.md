@@ -3,7 +3,7 @@
 
 LayraPS4 is a next-generation open PS4 emulator focused on accurate emulation, modular subsystems, and a faithful user experience.  
 Built from the ground up in **C** with a clean **ImGui-based PS4-style interface**, LayraPS4 aims to deliver stability, modularity, and authenticity.
-<img width="1024" height="1536" alt="LayraPS4" src="https://github.com/user-attachments/assets/8b13cc98-3ad9-4dfa-9379-b78e70e2be0d" />
+
 
 ## 🔹 Project Overview
 
