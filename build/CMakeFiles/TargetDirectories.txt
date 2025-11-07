@@ -1,0 +1,3 @@
+/home/ubuntu/LayraPS4/LayraPS4/build/CMakeFiles/LayraPS4.dir
+/home/ubuntu/LayraPS4/LayraPS4/build/CMakeFiles/edit_cache.dir
+/home/ubuntu/LayraPS4/LayraPS4/build/CMakeFiles/rebuild_cache.dir
