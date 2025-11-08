@@ -149,6 +149,13 @@ struct P2PSocket : public Socket {
     }
 };
 
+struct LANPlaySocket : public PosixSocket {
+    explicit LANPlaySocket(int domain, int type, int protocol) : PosixSocket(domain, type, protocol) {}
+    int SendPacket(const void* msg, u32 len, int flags, const OrbisNetSockaddr* to,
+                   u32 tolen) override;
+    int ReceivePacket(void* buf, u32 len, int flags, OrbisNetSockaddr* from, u32* fromlen) override;
+};
+
 struct UnixSocket : public Socket {
     net_socket sock;
     int socket_type;
