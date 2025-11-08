@@ -193,17 +193,17 @@ int PS4_SYSV_ABI sys_socketex(const char* name, int family, int type, int protoc
              magic_enum::enum_name((OrbisNetSocketType)type), protocol);
     SocketPtr socket;
     if (net_config.mode == Core::Networking::Mode::LAN_Play && type == ORBIS_NET_SOCK_DGRAM) {
-        // For LAN Play, we only intercept UDP sockets (DGRAM) for the tunnel
-        // We will define LANPlaySocket later, for now, we'll use PosixSocket and handle the logic in the NetworkingCore
-        // The LANPlaySocket is a placeholder for the custom socket implementation
-        // For now, we'll use PosixSocket and rely on the HLE layer to intercept and redirect traffic.
-        // This is a simpler approach for the initial implementation.
-        // The LAN Play logic will be implemented in the HLE functions (sceNetSendto, sceNetRecvfrom, etc.)
-        // For now, we'll just use PosixSocket and rely on the IP/Gateway/Netmask spoofing in net_util.cpp
+        // For LAN Play, we intercept UDP sockets (DGRAM) to tunnel traffic
+        socket = std::make_shared<LANPlaySocket>(family, type, protocol);
+        LOG_INFO(Lib_Net, "Created LANPlaySocket for UDP traffic.");
     }
     switch (type) {
     case ORBIS_NET_SOCK_STREAM:
     case ORBIS_NET_SOCK_DGRAM:
+        if (net_config.mode == Core::Networking::Mode::LAN_Play && type == ORBIS_NET_SOCK_DGRAM) {
+            // Already handled LANPlaySocket above
+            break;
+        }
         if (family == ORBIS_NET_AF_UNIX) {
             socket = std::make_shared<UnixSocket>(family, type, protocol);
             break;
