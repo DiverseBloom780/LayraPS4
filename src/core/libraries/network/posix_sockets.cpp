@@ -12,6 +12,8 @@
 #endif
 #include "net_error.h"
 #include "sockets.h"
+#include "core/networking/networking.h"
+#include "common/singleton.h"
 
 namespace Libraries::Net {
 
@@ -208,6 +210,18 @@ int PosixSocket::SendMessage(const OrbisNetMsghdr* msg, int flags) {
     int res = sendmsg(sock, reinterpret_cast<const msghdr*>(msg), flags);
     return ConvertReturnErrorCode(res);
 #endif
+}
+
+int LANPlaySocket::SendPacket(const void* msg, u32 len, int flags, const OrbisNetSockaddr* to,
+                               u32 tolen) {
+    // LAN Play logic will be handled in the HLE layer, for now, just pass to PosixSocket
+    return PosixSocket::SendPacket(msg, len, flags, to, tolen);
+}
+
+int LANPlaySocket::ReceivePacket(void* buf, u32 len, int flags, OrbisNetSockaddr* from,
+                                 u32* fromlen) {
+    // LAN Play logic will be handled in the HLE layer, for now, just pass to PosixSocket
+    return PosixSocket::ReceivePacket(buf, len, flags, from, fromlen);
 }
 
 int PosixSocket::SendPacket(const void* msg, u32 len, int flags, const OrbisNetSockaddr* to,
