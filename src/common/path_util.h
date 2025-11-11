@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: Copyright 2021 yuzu Emulator Project
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 #pragma once
 
 #include <filesystem>
@@ -108,5 +105,6 @@ void SetUserPath(PathType user_path, const std::filesystem::path& new_path);
 [[nodiscard]] std::optional<std::filesystem::path> FindGameByID(const std::filesystem::path& dir,
                                                                 const std::string& game_id,
                                                                 int max_depth);
+
 
 } // namespace Common::FS
