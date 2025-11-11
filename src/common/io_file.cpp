@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
-
 #include <vector>
 
 #include "common/alignment.h"
@@ -46,4 +44,5 @@ namespace {
             return L"r+b";
         case FileAccessMode::ReadAppend:
             return L"a+b";
+
         case FileAccessMode::Create:
