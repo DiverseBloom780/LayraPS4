@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 project(LayraPS4 C CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Set include directories
@@ -9,7 +9,7 @@ include_directories(include)
 include_directories(lib/imgui)
 include_directories(lib/imgui/backends)
 include_directories(src)
-include_directories(externals/toml11)
+# include_directories(externals/toml11)
 # Find SDL2
 find_package(SDL2 REQUIRED)
 #find_package(SDL2_image REQUIRED)
