@@ -24,6 +24,7 @@ std::filesystem::path find_fs_path_or(const basic_value<TC>& v, const K& ky,
                                       std::filesystem::path opt) {
     try {
         auto str = find<string>(v, ky);
+
         if (str.empty()) {
             return opt;
         }
@@ -145,7 +146,7 @@ static ConfigEntry<bool> isConnectedToNetwork(false);
 
 // Networking
 static ConfigEntry<Core::Networking::Config> networkingConfig;
-static bool enableDiscordRPC = false;
+static bool Config::enableDiscordRPC = false;
 static std::filesystem::path sys_modules_path = {};
 
 // Input
@@ -1274,47 +1275,47 @@ void setDefaultValues(bool is_game_specific) {
     gpuId.set(-1, is_game_specific);
     vkValidation.set(false, is_game_specific);
     vkValidationCore.set(true, is_game_specific);
-    vkValidationSync.set(false, is_game_specific);
-    vkValidationGpu.set(false, is_game_specific);
-    vkCrashDiagnostic.set(false, is_game_specific);
-    vkHostMarkers.set(false, is_game_specific);
-    vkGuestMarkers.set(false, is_game_specific);
-    rdocEnable.set(false, is_game_specific);
+    Config::vkValidationSync.set(false, is_game_specific);
+    Config::vkValidationGpu.set(false, is_game_specific);
+    Config::vkCrashDiagnostic.set(false, is_game_specific);
+    Config::vkHostMarkers.set(false, is_game_specific);
+    Config::vkGuestMarkers.set(false, is_game_specific);
+    Config::rdocEnable.set(false, is_game_specific);
 
     // GS - Debug
-    isDebugDump.set(false, is_game_specific);
-    isShaderDebug.set(false, is_game_specific);
-    isSeparateLogFilesEnabled.set(false, is_game_specific);
-    logEnabled.set(true, is_game_specific);
+    Config::isDebugDump.set(false, is_game_specific);
+    Config::isShaderDebug.set(false, is_game_specific);
+    Config::isSeparateLogFilesEnabled.set(false, is_game_specific);
+    Config::logEnabled.set(true, is_game_specific);
 
     // GS - Settings
-    m_language.set(1, is_game_specific);
+    Config::m_language.set(1, is_game_specific);
 
     // All other entries
     if (!is_game_specific) {
 
         // General
-        enableDiscordRPC = false;
+        Config::enableDiscordRPC = false;
 
         // Input
-        useSpecialPad.base_value = false;
-        specialPadClass.base_value = 1;
-        useUnifiedInputConfig.base_value = true;
-        controllerCustomColorRGB[0] = 0;
-        controllerCustomColorRGB[1] = 0;
-        controllerCustomColorRGB[2] = 255;
+        Config::useSpecialPad.base_value = false;
+        Config::specialPadClass.base_value = 1;
+        Config::useUnifiedInputConfig.base_value = true;
+        Config::controllerCustomColorRGB[0] = 0;
+        Config::controllerCustomColorRGB[1] = 0;
+        Config::controllerCustomColorRGB[2] = 255;
 
         // TODO: Change to be game specific
-        mainOutputDevice = "Default Device";
-        padSpkOutputDevice = "Default Device";
+        Config::mainOutputDevice = "Default Device";
+        Config::padSpkOutputDevice = "Default Device";
 
         // GPU
-        shouldPatchShaders.base_value = false;
-        internalScreenWidth.base_value = 1280;
-        internalScreenHeight.base_value = 720;
+        Config::shouldPatchShaders.base_value = false;
+        Config::internalScreenWidth.base_value = 1280;
+        Config::internalScreenHeight.base_value = 720;
 
         // Debug
-        isFpsColor.base_value = true;
+        Config::isFpsColor.base_value = true;
     }
 }
 
@@ -1456,7 +1457,7 @@ std::filesystem::path GetFoolproofInputConfigFile(const string& game_id) {
 
 void resetGameSpecificValue(std::string entry) {
     if (entry == "volumeSlider") {
-        volumeSlider.game_specific_value = std::nullopt;
+        Config::volumeSlider.game_specific_value = std::nullopt;
     }
 }
 
