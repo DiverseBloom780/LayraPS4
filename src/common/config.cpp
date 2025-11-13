@@ -213,7 +213,7 @@ std::filesystem::path save_data_path = {};
 ConfigEntry<u32> m_language(1); // english
 
 // USB Device
-static ConfigEntry<int> usbDeviceBackend(UsbBackendType::Real);
+static ConfigEntry<int> usbDeviceBackend(Config::UsbBackendType::Real);
 
 // Keys
 static string trophyKey = "";
@@ -1237,44 +1237,44 @@ void setDefaultValues(bool is_game_specific) {
 
     // Entries with game-specific settings that are in both the game-specific and global GUI
     // GS - General
-    volumeSlider.set(100, is_game_specific);
-    isTrophyPopupDisabled.set(false, is_game_specific);
-    trophyNotificationDuration.set(6.0, is_game_specific);
-    logFilter.set("", is_game_specific);
-    logType.set("sync", is_game_specific);
-    userName.set("shadPS4", is_game_specific);
-    isShowSplash.set(false, is_game_specific);
-    isSideTrophy.set("right", is_game_specific);
+    Config::volumeSlider.set(100, is_game_specific);
+    Config::isTrophyPopupDisabled.set(false, is_game_specific);
+    Config::trophyNotificationDuration.set(6.0, is_game_specific);
+    Config::logFilter.set("", is_game_specific);
+    Config::logType.set("sync", is_game_specific);
+    Config::userName.set("LayraPS4", is_game_specific);
+    Config::isShowSplash.set(false, is_game_specific);
+    Config::isSideTrophy.set("right", is_game_specific);
 
     // GS - Input
-    cursorState.set(HideCursorState::Idle, is_game_specific);
-    cursorHideTimeout.set(5, is_game_specific);
-    isMotionControlsEnabled.set(true, is_game_specific);
-    backgroundControllerInput.set(false, is_game_specific);
-    usbDeviceBackend.set(UsbBackendType::Real, is_game_specific);
+    Config::cursorState.set(Config::HideCursorState::Idle, is_game_specific);
+    Config::cursorHideTimeout.set(5, is_game_specific);
+    Config::isMotionControlsEnabled.set(true, is_game_specific);
+    Config::backgroundControllerInput.set(false, is_game_specific);
+    Config::usbDeviceBackend.set(Config::UsbBackendType::Real, is_game_specific);
 
     // GS - Audio
-    micDevice.set("Default Device", is_game_specific);
+    Config::micDevice.set("Default Device", is_game_specific);
 
     // GS - GPU
-    windowWidth.set(1280, is_game_specific);
-    windowHeight.set(720, is_game_specific);
-    isNullGpu.set(false, is_game_specific);
-    shouldCopyGPUBuffers.set(false, is_game_specific);
-    shouldDumpShaders.set(false, is_game_specific);
-    vblankFrequency.set(60, is_game_specific);
-    isFullscreen.set(false, is_game_specific);
-    fullscreenMode.set("Windowed", is_game_specific);
-    presentMode.set("Mailbox", is_game_specific);
-    isHDRAllowed.set(false, is_game_specific);
-    fsrEnabled.set(true, is_game_specific);
-    rcasEnabled.set(true, is_game_specific);
-    rcasAttenuation.set(250, is_game_specific);
+    Config::windowWidth.set(1280, is_game_specific);
+    Config::windowHeight.set(720, is_game_specific);
+    Config::isNullGpu.set(false, is_game_specific);
+    Config::shouldCopyGPUBuffers.set(false, is_game_specific);
+    Config::shouldDumpShaders.set(false, is_game_specific);
+    Config::vblankFrequency.set(60, is_game_specific);
+    Config::isFullscreen.set(false, is_game_specific);
+    Config::fullscreenMode.set("Windowed", is_game_specific);
+    Config::presentMode.set("Mailbox", is_game_specific);
+    Config::isHDRAllowed.set(false, is_game_specific);
+    Config::fsrEnabled.set(true, is_game_specific);
+    Config::rcasEnabled.set(true, is_game_specific);
+    Config::rcasAttenuation.set(250, is_game_specific);
 
     // GS - Vulkan
-    gpuId.set(-1, is_game_specific);
-    vkValidation.set(false, is_game_specific);
-    vkValidationCore.set(true, is_game_specific);
+    Config::gpuId.set(-1, is_game_specific);
+    Config::vkValidation.set(false, is_game_specific);
+    Config::vkValidationCore.set(true, is_game_specific);
     Config::vkValidationSync.set(false, is_game_specific);
     Config::vkValidationGpu.set(false, is_game_specific);
     Config::vkCrashDiagnostic.set(false, is_game_specific);
