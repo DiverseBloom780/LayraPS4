@@ -81,7 +81,7 @@ add_custom_command(TARGET LayraPS4 POST_BUILD
         ${CMAKE_SOURCE_DIR}/SDL2/lib/SDL2.dll
         $<TARGET_FILE_DIR:LayraPS4>)
 if(WIN32)
-    set(VULKAN_SDK_PATH "C:\VulkanSDK\1.4.328.1")
+    set(VULKAN_SDK_PATH "C:/VulkanSDK/1.4.328.1")
     include_directories(${VULKAN_SDK_PATH}/Include)
     link_directories(${VULKAN_SDK_PATH}/Lib)
 endif()
