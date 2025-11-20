@@ -1,15 +1,29 @@
-         return std::lexicographical_compare(
-                a.path_str.begin(), a.path_str.end(), b.path_str.begin(), b.path_str.end(),
-                [](char a_char, char b_char) {
-                    return std::tolower(a_char) < std::tolower(b_char);
-                });
-        });
+// SPDX-FileCopyrightText: Copyright 2025 LayraPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
 
-        for (const auto& entry : sorted_dirs) {
-            install_dirs.push_back(entry.path_str);
-            install_dirs_enabled.push_back(entry.enabled);
-        }
+#include "config.h"
+#include "log.h"
 
-        // Non game-specific entries
-        data["General"]["enableDiscordRPC"] = Config::enableDiscordRPC;
-        data["General"]["sysModulesPath"] = string{fmt::UTF(Config::sys_modules_path.u8string()).data};
+namespace Config {
+
+    std::string GetFoolproofInputConfigFile() {
+        return "config.toml";
+    }
+
+    void load(const std::string& path) {
+        Log::log("Loading config from: " + path);
+    }
+
+    Core::Networking::Config getNetworkingConfig() {
+        // Minimal default config for now
+        Core::Networking::Config config;
+        config.lan_play_enabled = true;
+        config.dns_spoofing_enabled = true;
+        return config;
+    }
+
+    int getUsbDeviceBackend() {
+        return UsbBackendType::Real;
+    }
+
+} // namespace Config
