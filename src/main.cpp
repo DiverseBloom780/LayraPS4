@@ -5,6 +5,7 @@
 #include "sdl_window.h"
 #include "common/config.h"
 #include "common/log.h"
+#include "input/controller.h"
 
 int main(int argc, char* argv[]) {
     // Initialize logging
@@ -14,19 +15,20 @@ int main(int argc, char* argv[]) {
     Config::load(Config::GetFoolproofInputConfigFile());
 
     // Create the emulator instance
-    Emulator emulator;
+    Core::Emulator emulator;
+
+    // Create the game controller
+    Input::GameController controller;
 
     // Create the SDL window and ImGui context
-    WindowSDL window(&emulator);
+    Frontend::WindowSDL window(1280, 720, &controller, "LayraPS4");
 
     // Main loop
-    while (window.isRunning()) {
-        window.handleEvents();
-        window.render();
+    while (window.IsOpen()) {
+        window.WaitEvent();
     }
 
     // Cleanup
-    window.cleanup();
     Log::shutdown();
 
     return 0;
