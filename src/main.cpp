@@ -4,32 +4,48 @@
 #include "emulator.h"
 #include "sdl_window.h"
 #include "common/config.h"
-#include "common/log.h"
+#include "common/log4cpp.h"
 #include "input/controller.h"
+
 
 int main(int argc, char* argv[]) {
     // Initialize logging
-    Log::init();
+    Log4Cpp::Logger logger = Log4Cpp::Logger::getLogger("LayraPS4");
 
-    // Load configuration
-    Config::load(Config::GetFoolproofInputConfigFile());
+    // Configure logging
+    Log4Cpp::Configurator::configure("log4cpp.properties");
 
-    // Create the emulator instance
-    Core::Emulator emulator;
+    try {
+        // Load configuration
+        Config::load(Config::GetFoolproofInputConfigFile());
 
-    // Create the game controller
-    Input::GameController controller;
+        // Create the emulator instance
+        Core::Emulator emulator;
 
-    // Create the SDL window and ImGui context
-    Frontend::WindowSDL window(1280, 720, &controller, "LayraPS4");
+        // Create the game controller
+        Input::GameController controller;
 
-    // Main loop
-    while (window.IsOpen()) {
-        window.WaitEvent();
+        // Create the SDL window and ImGui context
+        Frontend::WindowSDL window(1280, 720, &controller, "LayraPS4");
+
+        // Main loop
+        while (window.IsOpen()) {
+            window.WaitEvent();
+        }
+
+        // Cleanup
+        logger.info("Emulator shutting down...");
+
+        // Shutdown logging
+        Log4Cpp::Configurator::shutdown();
+    } catch (const std::exception& e) {
+        // Handle unexpected errors and exceptions
+        logger.error("Unexpected error: %s", e.what());
+
+        // Return error code
+        return 1;
     }
 
-    // Cleanup
-    Log::shutdown();
-
+    // Return success code
     return 0;
 }
