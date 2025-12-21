@@ -4,85 +4,128 @@
 #include <common/assert.h>
 #include "core/libraries/kernel/kernel.h"
 #include "net.h"
-#include "net_error.h"
-#include "sockets.h"
+#include "neterror.h"
+#include sockets.h"
 
 namespace Libraries::Net {
 
-int P2PSocket::Close() {
-    LOG_ERROR(Lib_Net, "(STUBBED) called");
-    return 0;
-}
+// P2PSocket class
+class P2PSocket {
+public:
+    // Close the socket
+    int Close() {
+        // Log an error message
+        LOGERROR(LibNet, "(STUBBED) called");
 
-int P2PSocket::SetSocketOptions(int level, int optname, const void* optval, u32 optlen) {
-    LOG_ERROR(Lib_Net, "(STUBBED) called");
-    return 0;
-}
+ // Return 0 to indicate success
+ return 0; 
+ }
 
-int P2PSocket::GetSocketOptions(int level, int optname, void* optval, u32* optlen) {
-    LOG_ERROR(Lib_Net, "(STUBBED) called");
-    return 0;
-}
+    // Set socket options
+    int SetSocketOptions(int level, int optname, const void optval, u32 optlen) {
+        // Log an error message
+        LOGERROR(LibNet, "(STUBBED) called");
 
-int P2PSocket::Bind(const OrbisNetSockaddr* addr, u32 addrlen) {
-    LOG_ERROR(Lib_Net, "(STUBBED) called");
-    return 0;
-}
+ // Return 0 to indicate success
+ return 0; 
+ }
 
-int P2PSocket::Listen(int backlog) {
-    LOG_ERROR(Lib_Net, "(STUBBED) called");
-    return 0;
-}
+    // Get socket options
+    int GetSocketOptions(int level, int optname, void optval, u32 optlen) {
+        // Log an error message
+        LOGERROR(LibNet, "(STUBBED) called");
 
-int P2PSocket::SendMessage(const OrbisNetMsghdr* msg, int flags) {
-    LOG_ERROR(Lib_Net, "(STUBBED) called");
-    *Libraries::Kernel::__Error() = ORBIS_NET_EAGAIN;
-    return -1;
-}
+ // Return 0 to indicate success
+ return 0; 
+ }
 
-int P2PSocket::SendPacket(const void* msg, u32 len, int flags, const OrbisNetSockaddr* to,
-                          u32 tolen) {
-    LOG_ERROR(Lib_Net, "(STUBBED) called");
-    *Libraries::Kernel::__Error() = ORBIS_NET_EAGAIN;
-    return -1;
-}
+    // Bind the socket to a address
+    int Bind(const OrbisNetSockaddr addr, u32 addrlen) {
+        // Log an error message
+        LOGERROR(LibNet, "(STUBBED) called");
 
-int P2PSocket::ReceiveMessage(OrbisNetMsghdr* msg, int flags) {
-    LOG_ERROR(Lib_Net, "(STUBBED) called");
-    *Libraries::Kernel::__Error() = ORBIS_NET_EAGAIN;
-    return -1;
-}
+ // Return 0 to indicate success
+ return 0; 
+ }
 
-int P2PSocket::ReceivePacket(void* buf, u32 len, int flags, OrbisNetSockaddr* from, u32* fromlen) {
-    LOG_ERROR(Lib_Net, "(STUBBED) called");
-    *Libraries::Kernel::__Error() = ORBIS_NET_EAGAIN;
-    return -1;
-}
+    // Listen for incoming connections
+    int Listen(int backlog) {
+        // Log an error message
+        LOGERROR(LibNet, "(STUBBED) called");
 
-SocketPtr P2PSocket::Accept(OrbisNetSockaddr* addr, u32* addrlen) {
-    LOG_ERROR(Lib_Net, "(STUBBED) called");
-    *Libraries::Kernel::__Error() = ORBIS_NET_EAGAIN;
-    return nullptr;
-}
+ // Return 0 to indicate success
+ return 0; 
+ }
 
-int P2PSocket::Connect(const OrbisNetSockaddr* addr, u32 namelen) {
-    LOG_ERROR(Lib_Net, "(STUBBED) called");
-    return 0;
-}
+ // Send a message over the socket
+ int SendMessage(const OrbisNetMsghdr msg, int flags) {
+ // Log an error message
+ LOGERROR(LibNet, "( STUBBED) called");
 
-int P2PSocket::GetSocketAddress(OrbisNetSockaddr* name, u32* namelen) {
-    LOG_ERROR(Lib_Net, "(STUBBED) called");
-    return 0;
-}
+        // Set an error code and return -1 to indicate failure
+        Libraries::Kernel::Error() = ORBISNETEAGAIN;
+        return -1;
+    }
 
-int P2PSocket::GetPeerName(OrbisNetSockaddr* addr, u32* namelen) {
-    LOG_ERROR(Lib_Net, "(STUBBED) called");
-    return 0;
-}
+    // Send a packet over the socket
+    int SendPacket(const void msg, u32 len, int flags, const OrbisNetSockaddr to, u32 tolen) {
+        // Log an error message
+        LOGERROR(LibNet, "(STUBBED) called");
 
-int P2PSocket::fstat(Libraries::Kernel::OrbisKernelStat* stat) {
-    LOG_ERROR(Lib_Net, "(STUBBED) called");
-    return 0;
-}
+        // Set an error code and return -1 to indicate failure
+        Libraries::Kernel::Error() = ORBISNETEAGAIN;
+        return -1;
+    }
 
-} // namespace Libraries::Net
+    // Receive a message from the socket
+    int ReceiveMessage(OrbisNetMsghdr msg, int flags) {
+        // Log an error message
+        LOGERROR(LibNet, "(STUBBED) called");
+
+        // Set an error code and return -1 to indicate failure
+        Libraries::Kernel::Error() = ORBISNETEAGAIN;
+        return -1;
+    }
+
+    // Receive a packet from the socket
+    int ReceivePacket(void buf, u32 len, int flags, OrbisNetSockaddr from, u32 fromlen) {
+        // Log an error message
+        LOGERROR(LibNet, "(STUBBED) called");
+
+        // Set an error code and return -1 to indicate failure
+        Libraries::Kernel::Error() = ORBISNETEAGAIN;
+        return -1;
+    }
+
+    // Accept an incoming connection
+    SocketPtr Accept(OrbisNetSockaddr addr, u32 addrlen) {
+        // Log an error message
+        LOGERROR(LibNet, "(STUBBED) called");
+
+        // Set an error code and return nullptr to indicate failure
+        Libraries::Kernel::Error() = ORBISNETEAGAIN;
+        return nullptr;
+    }
+
+ // Connect to a remote address
+ int Connect(const OrbisNetSockaddr addr, u32 namelen) {
+ // Log an error message
+ LOGERROR(LibNet, "( STUBBED) called");
+
+ // Return 0 to indicate success
+ return 0; 
+ }
+
+    // Get the socket address
+    int GetSocketAddress(OrbisNetSockaddr name, u32 namelen) {
+        // Log an error message
+        LOGERROR(LibNet, "(STUBBED) called");
+
+ // Return 0 to indicate success
+ return 0; 
+ }
+
+    // Get the peer name
+    int GetPeerName(OrbisNetSockaddr addr, u32* namelen) {
+        // Log an error message
+        LOGERROR(Lib_Net
