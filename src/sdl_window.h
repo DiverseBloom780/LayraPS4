@@ -7,105 +7,160 @@
 
 #include "common/types.h"
 #include "core/libraries/pad/pad.h"
-namespace Core { class Emulator; }
+
+namespace Core {
+class Emulator;
+}
+
 #include "input/controller.h"
 
-struct SDL_Window;
-struct SDL_Gamepad;
-union SDL_Event;
+struct SDLWindow;
+struct SDLGamepad; 
+union SDLEvent;
 
 namespace Input {
 
 class SDLInputEngine : public Engine {
 public:
+    // Destructor
     ~SDLInputEngine() override;
+
+    // Initialize the input engine
     void Init() override;
+
+    // Set the light bar RGB values
     void SetLightBarRGB(u8 r, u8 g, u8 b) override;
+
+    // Set the vibration motor values
     void SetVibration(u8 smallMotor, u8 largeMotor) override;
+
+    // Get the gyro poll rate
     float GetGyroPollRate() const override;
+
+    // Get the accel poll rate
     float GetAccelPollRate() const override;
+
+    // Read the current state
     State ReadState() override;
 
 private:
-    float m_gyro_poll_rate = 0.0f;
-    float m_accel_poll_rate = 0.0f;
+    // Gyro poll rate
+    float mgyropollrate = 0.0f;
+
+    // Accel poll rate
+    float maccelpollrate = 0.0f;
 };
 
 } // namespace Input
 
 namespace Frontend {
 
+// Enum for window system types
 enum class WindowSystemType : u8 {
+    // Headless mode
     Headless,
+
+    // Windows platform
     Windows,
+
+    // X11 platform
     X11,
+
+    // Wayland platform
     Wayland,
+
+    // Metal platform
     Metal,
 };
 
+// Structure for window system information
 struct WindowSystemInfo {
-    // Connection to a display server. This is used on X11 and Wayland platforms.
-    void* display_connection = nullptr;
+    // Connection to a display server
+    void displayconnection = nullptr;
 
-    // Render surface. This is a pointer to the native window handle, which depends
-    // on the platform. e.g. HWND for Windows, Window for X11. If the surface is
-    // set to nullptr, the video backend will run in headless mode.
-    void* render_surface = nullptr;
+    // Render surface
+    void rendersurface = nullptr;
 
-    // Scale of the render surface. For hidpi systems, this will be >1.
-    float render_surface_scale = 1.0f;
+    // Scale of the render surface
+    float rendersurfacescale = 1.0f;
 
-    // Window system type. Determines which GL context or Vulkan WSI is used.
+    // Window system type
     WindowSystemType type = WindowSystemType::Headless;
 };
 
+// Class for SDL window
 class WindowSDL {
-    int keyboard_grab = 0;
+    // Keyboard grab count
+    int keyboardgrab = 0;
 
 public:
-    explicit WindowSDL(s32 width, s32 height, Input::GameController* controller, Core::Emulator* emulator,
-                       std::string_view window_title);
+    // Constructor
+    explicit WindowSDL(s32 width, s32 height, Input::GameController controller, Core::Emulator emulator,
+                       std::stringview windowtitle);
+
+    // Destructor
     ~WindowSDL();
 
-    s32 GetWidth() const {
-        return width;
-    }
+    // Get the width
+    s32 GetWidth() const;
 
-    s32 GetHeight() const {
-        return height;
-    }
+    // Get the height
+    s32 GetHeight() const;
 
-    bool IsOpen() const {
-        return is_open;
-    }
+    // Check if the window is open
+    bool IsOpen() const;
 
-    [[nodiscard]] SDL_Window* GetSDLWindow() const {
-        return window;
-    }
+    // Get the SDL window
+    [[nodiscard]] SDLWindow GetSDLWindow() const;
 
-    WindowSystemInfo GetWindowInfo() const {
-        return window_info;
-    }
+    // Get the window system information
+    WindowSystemInfo GetWindowInfo() const;
 
+    // Wait for an event
     void WaitEvent();
+
+    // Initialize the timers
     void InitTimers();
 
+    // Request the keyboard
     void RequestKeyboard();
+
+    // Release the keyboard
     void ReleaseKeyboard();
 
 private:
+    // On resize
     void OnResize();
-    void OnKeyboardMouseInput(const SDL_Event* event);
-    void OnGamepadEvent(const SDL_Event* event);
+
+    // On keyboard mouse input
+    void OnKeyboardMouseInput(const SDLEvent event);
+
+    // On gamepad event
+    void OnGamepadEvent(const SDLEvent event);
 
 private:
+    // Width
     s32 width;
+
+    // Height
     s32 height;
-    Input::GameController* controller;
-    Core::Emulator* emulator;
-    WindowSystemInfo window_info{};
-    SDL_Window* window{};
-    bool is_shown{};
+
+    // Controller
+    Input::GameController controller;
+
+    // Emulator
+    Core::Emulator emulator;
+
+    // Window system information
+    WindowSystemInfo windowinfo{};
+
+    // SDL window
+    SDLWindow window{};
+
+    // Whether the window is shown
+    bool isshown{};
+
+    // Whether the window is open
     bool is_open{true};
 };
 
