@@ -5,13 +5,24 @@
 
 class Emulator {
 public:
+    // Constructor
     Emulator();
+
+    // Destructor
     ~Emulator();
 
+    // Run the emulator
     void run();
+
+    // Stop the emulator
     void stop();
-    bool isRunning() const { return running; }
+
+    // Check if the emulator is running
+    bool isRunning() const {
+        return running;
+    }
 
 private:
+    // Flag to indicate if the emulator is running
     bool running = true;
 };
