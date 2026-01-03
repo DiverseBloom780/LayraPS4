@@ -11,14 +11,14 @@
 
 // Stubs (replace with real implementations later)
 namespace orbis {
-    void audio_init() {}
-    void pad_init() {}
+    void audio_play_boot_sound() {}
     void kernel_init(void*) {}
     void kernel_shutdown(void*) {}
     void modules_init() {}
+    void audio_init() {}
+    void pad_init() {}
     void savedata_init() {}
     void trophy_init() {}
-    void play_boot_sound() {}
 }
 
 #include "layra_pkg.h"
@@ -31,49 +31,8 @@ void ImGui_RenderCallback(VkCommandBuffer cmd) {
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 }
 
-/* ----------  PS4 Dashboard  ---------- */
-void RenderDashboard(ImGuiIO& io) {
-    ImGui::SetNextWindowPos(ImVec2(0, 0));
-    ImGui::SetNextWindowSize(io.DisplaySize);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.08f, 0.12f, 0.95f));
-
-    ImGui::Begin("PS4 Dashboard", nullptr,
-                 ImGuiWindowFlags_NoTitleBar 
-
-ImGuiWindowFlags_NoResize
-                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
-    // Top row – content tiles
-    float topY = io.DisplaySize.y * 0.15f;
-    ImGui::SetCursorPosY(topY);
-    ImGui::Indent(60);
-    const char* tiles[] = { "What's New", "Library", "Store", "Capture Gallery" };
-    for (int i = 0; i < IM_ARRAYSIZE(tiles); ++i) {
-        ImGui::PushID(i);
-        if (ImGui::Button(tiles[i], ImVec2(150, 150))) {}
-        ImGui::PopID();
-        if (i < IM_ARRAYSIZE(tiles) - 1) ImGui::SameLine();
-    }
-
-    // Bottom row – function icons
-    float bottomY = io.DisplaySize.y * 0.75f;
-    ImGui::SetCursorPosY(bottomY);
-    ImGui::Indent(60);
-    const char* icons[] = { "Friends", "Messages", "Notifications", "Profile", "Settings", "Power" };
-    for (int i = 0; i < IM_ARRAYSIZE(icons); ++i) {
-        ImGui::PushID(i + 100);
-        if (ImGui::Button(icons[i], ImVec2(100, 100))) {}
-        ImGui::PopID();
-        if (i < IM_ARRAYSIZE(icons) - 1) ImGui::SameLine();
-    }
-
-    ImGui::End();
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
-}
-
-/* ----------  Boot Sequence  ---------- */
-void RenderBootSequence(ImGuiIO& io) {
+// PS4 Boot Sequence
+void RenderPS4BootSequence(ImGuiIO& io) {
     static Uint64 start = SDL_GetTicks();
     Uint64 now = SDL_GetTicks();
     float alpha = (now - start) < 2000 ? 1.0f : 0.0f;
@@ -88,6 +47,43 @@ void RenderBootSequence(ImGuiIO& io) {
     ImGui::SetCursorPos((io.DisplaySize - txt) * 0.5f);
     ImGui::Text("LayraPS4 - Booting Orbis OS...");
     ImGui::End();
+    ImGui::PopStyleColor();
+}
+
+// PS4 Dashboard
+void RenderPS4Dashboard(ImGuiIO& io) {
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(io.DisplaySize);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.08f, 0.12f, 0.95f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+
+    ImGui::Begin("PS4 Dashboard", nullptr,
+                 ImGuiWindowFlags_NoTitleBar 
+
+ImGuiWindowFlags_NoResize
+                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
+    // Top row – function icons
+    ImGui::Indent(60);
+    const char* icons[] = { "Store", "Friends", "Settings", "Power" };
+    for (int i = 0; i < 4; ++i) {
+        if (ImGui::Button(icons[i], ImVec2(120, 40))) {}
+        ImGui::SameLine(0, 20);
+    }
+
+    // Middle row – game tiles (hard-coded for now)
+    float contentY = io.DisplaySize.y * 0.35f;
+    ImGui::SetCursorPos(ImVec2(100, contentY));
+    const char* games[] = { "Bloodborne", "Playroom", "The Last of Us Part II" };
+    for (int i = 0; i < 3; ++i) {
+        ImGui::BeginGroup();
+        if (ImGui::Button(games[i], ImVec2(240, 240))) {}
+        ImGui::Text("%s", games[i]);
+        ImGui::EndGroup();
+        ImGui::SameLine(0, 30);
+    }
+
+    ImGui::End();
+    ImGui::PopStyleVar();
     ImGui::PopStyleColor();
 }
 
@@ -160,7 +156,8 @@ SDL_WINDOW_RESIZABLE
     };
     ImGui_ImplVulkan_Init(&init_info);
 
-    // Initialize PS4 subsystems (stubs for now)
+    // Initialize PS4 subsystems (stubs)
+    orbis::audio_play_boot_sound();
     orbis::kernel_init(nullptr);
     orbis::modules_init();
     orbis::audio_init();
@@ -185,9 +182,9 @@ SDL_WINDOW_RESIZABLE
         ImGui::NewFrame();
 
         if (SDL_GetTicks() - boot_start < 3000) {
-            RenderBootSequence(io);
+            RenderPS4BootSequence(io);
         } else {
-            RenderDashboard(io);
+            RenderPS4Dashboard(io);
         }
 
         ImGui::Render();
