@@ -1,118 +1,113 @@
+// FILE 2: LayraPS4/src/core/vfs/layra_vfs.c           [BACKEND ENGINE]
 #include "layra_vfs.h"
+#include <SDL3/SDL.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
+typedef struct {
+    char mount_point[256];
+    char source_path[512];
+    void* handler;
+    int is_read_only;
+} layra_vfs_mount_t;
 
-#define MAX_MOUNTS 16
+static layra_vfs_mount_t g_mount_points[10];
+static int g_mount_count = 0;
+static int g_vfs_initialized = 0;
 
-static layra_vfs_mount_t mounts[MAX_MOUNTS];
-static int num_mounts = 0;
-
-void layra_vfs_init() {
-    num_mounts = 0;
-    // Optionally, initialize default mounts here
+int layra_vfs_init(void) {
+    if (g_vfs_initialized) return 0;
+    
+    // Initialize SDL3 subsystems needed for VFS
+    if (SDL_Init(SDL_INIT_IO) < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "SDL3 initialization failed: %s", SDL_GetError());
+        return -1;
+    }
+    
+    g_mount_count = 0;
+    g_vfs_initialized = 1;
+    return 0;
 }
 
-bool layra_vfs_mount(const char* virtual_path, const char* host_path) {
-    if (num_mounts >= MAX_MOUNTS) {
-        fprintf(stderr, "VFS: Max mount points reached.\n");
-        return false;
-    }
-    if (strlen(virtual_path) >= MAX_VFS_PATH || strlen(host_path) >= MAX_VFS_PATH) {
-        fprintf(stderr, "VFS: Path too long.\n");
-        return false;
-    }
-
-    strcpy(mounts[num_mounts].virtual_path, virtual_path);
-    strcpy(mounts[num_mounts].host_path, host_path);
-    num_mounts++;
-    fprintf(stdout, "VFS: Mounted %s to %s\n", virtual_path, host_path);
-    return true;
+int layra_vfs_mount(const char* mount_point, const char* source_path) {
+    if (!mount_point || !source_path) return -1;
+    if (g_mount_count >= 10) return -1;
+    
+    // Use SDL3 string copying for safety
+    SDL_strlcpy(g_mount_points[g_mount_count].mount_point, mount_point, sizeof(g_mount_points[g_mount_count].mount_point));
+    SDL_strlcpy(g_mount_points[g_mount_count].source_path, source_path, sizeof(g_mount_points[g_mount_count].source_path));
+    g_mount_points[g_mount_count].is_read_only = 1;
+    g_mount_count++;
+    
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "VFS: Mounted %s at %s", source_path, mount_point);
+    return 0;
 }
 
-bool layra_vfs_unmount(const char* virtual_path) {
-    for (int i = 0; i < num_mounts; ++i) {
-        if (strcmp(mounts[i].virtual_path, virtual_path) == 0) {
-            // Shift remaining mounts
-            for (int j = i; j < num_mounts - 1; ++j) {
-                mounts[j] = mounts[j + 1];
-            }
-            num_mounts--;
-            fprintf(stdout, "VFS: Unmounted %s\n", virtual_path);
-            return true;
-        }
-    }
-    fprintf(stderr, "VFS: Mount point %s not found.\n", virtual_path);
-    return false;
-}
-
-const char* layra_vfs_resolve_path(const char* virtual_path) {
-    static char resolved_path[MAX_VFS_PATH];
-    for (int i = 0; i < num_mounts; ++i) {
-        if (strncmp(virtual_path, mounts[i].virtual_path, strlen(mounts[i].virtual_path)) == 0) {
-            // Found a matching mount point
-            snprintf(resolved_path, MAX_VFS_PATH, "%s%s", mounts[i].host_path,
-                     virtual_path + strlen(mounts[i].virtual_path));
-            return resolved_path;
-        }
-    }
-    // If no mount point matches, assume it's a direct host path or invalid
-    return NULL;
-}
-
-layra_vfs_file_t* layra_vfs_fopen(const char* virtual_path, const char* mode) {
-    const char* host_path = layra_vfs_resolve_path(virtual_path);
-    if (host_path == NULL) {
-        fprintf(stderr, "VFS: Could not resolve virtual path %s\n", virtual_path);
+layra_vfs_file_t* layra_vfs_fopen(const char* path, const char* mode) {
+    if (!path || !mode) return NULL;
+    
+    // Use SDL3 file operations for better cross-platform support
+    SDL_IOStream* stream = SDL_IOFromFile(path, mode);
+    if (!stream) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VFS: Failed to open file %s: %s", path, SDL_GetError());
         return NULL;
     }
-
-    FILE* host_file = fopen(host_path, mode);
-    if (host_file == NULL) {
-        fprintf(stderr, "VFS: Failed to open host file %s for virtual path %s\n", host_path, virtual_path);
-        return NULL;
-    }
-
-    layra_vfs_file_t* vfs_file = (layra_vfs_file_t*)malloc(sizeof(layra_vfs_file_t));
-    if (vfs_file == NULL) {
-        fprintf(stderr, "VFS: Memory allocation failed for VFS file handle.\n");
-        fclose(host_file);
-        return NULL;
-    }
-
-    vfs_file->host_file_ptr = host_file;
-    strncpy(vfs_file->virtual_path, virtual_path, MAX_VFS_PATH - 1);
-    vfs_file->virtual_path[MAX_VFS_PATH - 1] = '\0';
-    vfs_file->current_offset = 0;
-
-    return vfs_file;
+    
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "VFS: Opened file %s in mode %s", path, mode);
+    return (layra_vfs_file_t*)stream;
 }
 
 int layra_vfs_fclose(layra_vfs_file_t* file) {
-    if (file == NULL) return EOF;
-    int result = fclose(file->host_file_ptr);
-    free(file);
-    return result;
-}
-
-size_t layra_vfs_fread(void* ptr, size_t size, size_t count, layra_vfs_file_t* file) {
-    if (file == NULL) return 0;
-    size_t bytes_read = fread(ptr, size, count, file->host_file_ptr);
-    file->current_offset += (long)(bytes_read * size);
-    return bytes_read;
-}
-
-int layra_vfs_fseek(layra_vfs_file_t* file, long offset, int whence) {
-    if (file == NULL) return -1;
-    int result = fseek(file->host_file_ptr, offset, whence);
-    if (result == 0) {
-        file->current_offset = ftell(file->host_file_ptr);
+    if (!file) return -1;
+    
+    SDL_IOStream* stream = (SDL_IOStream*)file;
+    if (SDL_CloseIO(stream) != 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VFS: Failed to close file: %s", SDL_GetError());
+        return -1;
     }
-    return result;
+    
+    return 0;
+}
+
+size_t layra_vfs_fread(void* buffer, size_t size, size_t count, layra_vfs_file_t* file) {
+    if (!buffer || !file) return 0;
+    
+    SDL_IOStream* stream = (SDL_IOStream*)file;
+    size_t total_bytes = size * count;
+    size_t bytes_read = SDL_ReadIO(stream, buffer, total_bytes);
+    
+    if (bytes_read != total_bytes && SDL_GetError()[0] != '\0') {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VFS: Read error: %s", SDL_GetError());
+    }
+    
+    return bytes_read / size;  // Return number of items read
+}
+
+int layra_vfs_fseek(layra_vfs_file_t* file, long offset, int origin) {
+    if (!file) return -1;
+    
+    SDL_IOStream* stream = (SDL_IOStream*)file;
+    Sint64 result = SDL_SeekIO(stream, offset, origin);
+    
+    if (result < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VFS: Seek error: %s", SDL_GetError());
+        return -1;
+    }
+    
+    return 0;
 }
 
 long layra_vfs_ftell(layra_vfs_file_t* file) {
-    if (file == NULL) return -1;
-    return file->current_offset;
+    if (!file) return -1;
+    
+    SDL_IOStream* stream = (SDL_IOStream*)file;
+    Sint64 position = SDL_TellIO(stream);
+    
+    if (position < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "VFS: Tell error: %s", SDL_GetError());
+        return -1;
+    }
+    
+    return (long)position;
 }
 
