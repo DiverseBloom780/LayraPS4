@@ -21,7 +21,6 @@ namespace orbis {
 }
 
 #include "layra_pkg.h"
-#include "layra_vfs.h"
 #include "layra_vulkan.h"
 
 struct Theme {
