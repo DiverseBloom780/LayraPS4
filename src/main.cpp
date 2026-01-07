@@ -8,7 +8,6 @@
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_vulkan.h"
-
 // Stubs (replace with real implementations later)
 namespace orbis {
     void audio_play_boot_sound() {}
@@ -25,7 +24,42 @@ namespace orbis {
 #include "layra_vfs.h"
 #include "layra_vulkan.h"
 
+struct Theme {
+    std::string name;
+    ImVec4 backgroundColor;
+    ImVec4 buttonColor;
+    ImVec4 buttonHoverColor;
+};
+
+class ThemeManager {
+public:
+    ThemeManager() {}
+    ~ThemeManager() {}
+
+    void addTheme(const Theme& theme) {
+        themes_.push_back(theme);
+    }
+
+    void selectTheme(const std::string& themeName) {
+        for (const auto& theme : themes_) {
+            if (theme.name == themeName) {
+                currentTheme_ = theme;
+                break;
+            }
+        }
+    }
+
+    const Theme& getCurrentTheme() const {
+        return currentTheme_;
+    }
+
+private:
+    std::vector<Theme> themes_;
+    Theme currentTheme_;
+};
+
 static VkDescriptorPool g_DescriptorPool = VK_NULL_HANDLE;
+ThemeManager themeManager;
 
 void ImGui_RenderCallback(VkCommandBuffer cmd) {
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
@@ -52,15 +86,19 @@ void RenderPS4BootSequence(ImGuiIO& io) {
 
 // PS4 Dashboard
 void RenderPS4Dashboard(ImGuiIO& io) {
+    themeManager.addTheme(Theme{"Default", ImVec4(0.06f, 0.08f, 0.12f, 0.95f), ImVec4(0.16f, 0.29f, 0.48f, 0.40f), ImVec4(0.26f, 0.59f, 0.98f, 1.00f)});
+    themeManager.addTheme(Theme{"Dark", ImVec4(0.02f, 0.02f, 0.02f, 0.95f), ImVec4(0.08f, 0.08f, 0.08f, 0.40f), ImVec4(0.12f, 0.12f, 0.12f, 1.00f)});
+    themeManager.selectTheme("Default");
+
+    const Theme& currentTheme = themeManager.getCurrentTheme();
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(io.DisplaySize);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.06f, 0.08f, 0.12f, 0.95f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, currentTheme.backgroundColor);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
     ImGui::Begin("PS4 Dashboard", nullptr,
                  ImGuiWindowFlags_NoTitleBar 
-
-ImGuiWindowFlags_NoResize
+//ImGuiWindowFlags_NoResize
                  ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
     // Top row – function icons
     ImGui::Indent(60);
@@ -82,6 +120,16 @@ ImGuiWindowFlags_NoResize
         ImGui::SameLine(0, 30);
     }
 
+    // Theme selection menu
+    if (ImGui::BeginMenu("Themes")) {
+        for (const auto& theme : themeManager.themes_) {
+            if (ImGui::MenuItem(theme.name.c_str())) {
+                themeManager.selectTheme(theme.name);
+            }
+        }
+        ImGui::EndMenu();
+    }
+
     ImGui::End();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
@@ -90,8 +138,7 @@ ImGuiWindowFlags_NoResize
 /* ----------  Main  ---------- */
 int main(int, char*[]) {
     if (SDL_Init(SDL_INIT_VIDEO 
-
-SDL_INIT_TIMER	SDL_INIT_GAMEPAD
+//SDL_INIT_TIMER	SDL_INIT_GAMEPAD
  SDL_INIT_AUDIO) != 0) {
         std::printf("SDL_Init failed: %s\n", SDL_GetError());
         return -1;
@@ -99,8 +146,7 @@ SDL_INIT_TIMER	SDL_INIT_GAMEPAD
     SDL_Window* window = SDL_CreateWindow(
         "LayraPS4 - PS4 OS Emulator", 1920, 1080,
         SDL_WINDOW_VULKAN 
-
-SDL_WINDOW_RESIZABLE
+//SDL_WINDOW_RESIZABLE
  SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (!window) return -1;
     LayraVulkanContext vk{};
@@ -115,9 +161,8 @@ SDL_WINDOW_RESIZABLE
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags 
-
-= ImGuiConfigFlags_NavEnableKeyboard
- ImGuiConfigFlags_NavEnableGamepad;
+//= ImGuiConfigFlags_NavEnableKeyboard
+// ImGuiConfigFlags_NavEnableGamepad;
     // PS4 dark theme
     ImVec4* c = ImGui::GetStyle().Colors;
     c[ImGuiCol_WindowBg] = ImVec4(0.06f, 0.08f, 0.12f, 0.95f);
