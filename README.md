@@ -66,7 +66,7 @@ Any study of other emulator repositories (e.g., RPCS3, ShadPS4) is strictly for 
 
 🔹 Future Roadmap
 
-Finalize PKG/VFS subsystems ✅
+Finalize PKG subsystems ✅
 
 Implement portal emulation (Skylanders, Infinity, LEGO Dimensions) 🚧
 
@@ -80,7 +80,7 @@ Begin PSVR subsystem research ⏳
 
 Lead Developer: DiverseBloom780
 
-System Engineer: Manus (Autonomous Assistant Agent)
+System Engineer: The Oracle AI
 
 Acknowledgments:
 
