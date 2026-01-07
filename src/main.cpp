@@ -75,10 +75,13 @@ namespace orbis {
 
     void kernelshutdown(void arg) {
         // Shutdown kernel memory management
-        //kernelmemoryshutdown();
+        kernelmemoryshutdown();
 
         // Shutdown kernel threads
-        //kernelthreadshutdown();
+        kernelthreadshutdown();
+
+        // Release any resources used by the kernel
+        // ...
     }
 }
 
@@ -243,5 +246,4 @@ int main(int, char[]) {
         .sType = VKSTRUCTURETYPEDESCRIPTORPOOLCREATEINFO,
         .flags = VKDESCRIPTORPOOLCREATEFREEDESCRIPTORSETBIT,
         .maxSets = 1000,
-        .poolSizeCount = (uint32t)IMARRAYSIZE(poolsizes),
-        .pPoolSizes = poolsizes
+        .poolSizeCount = (uint32t)IM
