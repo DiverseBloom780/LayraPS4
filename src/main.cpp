@@ -311,6 +311,20 @@ ImGuiWindowFlags_NoMove
         ImGui::EndMenu();
     }
 
+    // GUI implementation
+    ImGui::BeginTabBar("TabBar");
+    ImGui::BeginTabItem("Dashboard");
+        if (ImGui::Button("Dashboard")) {
+            // Open the dashboard
+        }
+    ImGui::EndTabItem();
+    ImGui::BeginTabItem("Settings");
+        if (ImGui::Button("Settings")) {
+            // Open the settings
+        }
+    ImGui::EndTabItem();
+    ImGui::EndTabBar();
+
     ImGui::End();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
