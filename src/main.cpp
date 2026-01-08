@@ -29,6 +29,10 @@ namespace orbis {
 
         // Initialize kernel threads
         kernel_thread_init();
+
+        // Initialize kernel modules
+        module_load("kernel_module");
+        module_init("kernel_module");
     }
 
     void kernel_shutdown(void* arg) {
@@ -38,8 +42,8 @@ namespace orbis {
         // Shutdown kernel threads
         kernel_thread_shutdown();
 
-        // Release any resources used by the kernel
-        // ...
+        // Shutdown kernel modules
+        module_shutdown("kernel_module");
     }
 
     void modules_init() {
