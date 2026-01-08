@@ -1,4 +1,4 @@
-// LayraPS4 – PS4 OS Emulator (error-free build) main.cpp
+// LayraPS4  PS4 OS Emulator (error-free build) main.cpp
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -14,8 +14,9 @@ namespace orbis {
         // Load the boot sound file
         SDL_AudioSpec spec;
         Uint32 wav_length;
-        Uint8 *wav_buffer;
-        SDL_LoadWAV("boot_sound.wav", &spec, &wav_buffer, &wav_length);
+        Uint8* wav_buffer;
+        SDL_LoadWAV("bootsound.wav", &spec, &wav_buffer, &wav_length);
+
         // Play the sound
         SDL_AudioDeviceID device = SDL_OpenAudioDevice(NULL, 0, &spec, NULL, 0);
         SDL_QueueAudio(device, wav_buffer, wav_length);
@@ -24,10 +25,10 @@ namespace orbis {
 
     void kernel_init(void* arg) {
         // Initialize kernel memory management
-        //kernel_memory_init();
+        kernel_memory_init();
 
         // Initialize kernel threads
-        //kernel_thread_init();
+        kernel_thread_init();
     }
 
     void kernel_shutdown(void* arg) {
@@ -41,6 +42,49 @@ namespace orbis {
         // ...
     }
 
+    void modules_init() {
+        // Load the necessary modules
+        module_load("module1");
+        module_load("module2");
+
+        // Initialize module functionality
+        module_init("module1");
+        module_init("module2");
+    }
+
+    void audio_init() {
+        // Initialize audio subsystem
+        audio_subsystem_init();
+
+        // Set up audio devices
+        audio_device_setup();
+    }
+
+    void pad_init() {
+        // Initialize pad subsystem
+        pad_subsystem_init();
+
+        // Set up pad devices
+        pad_device_setup();
+    }
+
+    void savedata_init() {
+        // Initialize savedata subsystem
+        savedata_subsystem_init();
+
+        // Set up savedata devices
+        savedata_device_setup();
+    }
+
+    void trophy_init() {
+        // Initialize trophy subsystem
+        trophy_subsystem_init();
+
+        // Set up trophy devices
+        trophy_device_setup();
+    }
+
+    // Add this function to the orbis namespace
     void kernel_memory_init() {
         // Initialize kernel memory management
         // ...
@@ -61,16 +105,7 @@ namespace orbis {
         // ...
     }
 
-    void modules_init() {
-        // Load the necessary modules
-        //module_load("module1");
-        //module_load("module2");
-
-        // Initialize module functionality
-        //module_init("module1");
-        //module_init("module2");
-    }
-
+    // Add this function to the orbis namespace
     void module_load(const std::string& name) {
         // Load the module with the given name
         // ...
@@ -81,14 +116,7 @@ namespace orbis {
         // ...
     }
 
-    void audio_init() {
-        // Initialize audio subsystem
-        //audio_subsystem_init();
-
-        // Set up audio devices
-        //audio_device_setup();
-    }
-
+    // Add this function to the orbis namespace
     void audio_subsystem_init() {
         // Initialize the audio subsystem
         // ...
@@ -109,14 +137,7 @@ namespace orbis {
         // ...
     }
 
-    void pad_init() {
-        // Initialize pad subsystem
-        //pad_subsystem_init();
-
-        // Set up pad devices
-        //pad_device_setup();
-    }
-
+    // Add this function to the orbis namespace
     void pad_subsystem_init() {
         // Initialize the pad subsystem
         // ...
@@ -137,14 +158,7 @@ namespace orbis {
         // ...
     }
 
-    void savedata_init() {
-        // Initialize savedata subsystem
-        //savedata_subsystem_init();
-
-        // Set up savedata devices
-        //savedata_device_setup();
-    }
-
+    // Add this function to the orbis namespace
     void savedata_subsystem_init() {
         // Initialize the savedata subsystem
         // ...
@@ -165,14 +179,7 @@ namespace orbis {
         // ...
     }
 
-    void trophy_init() {
-        // Initialize trophy subsystem
-        //trophy_subsystem_init();
-
-        // Set up trophy devices
-        //trophy_device_setup();
-    }
-
+    // Add this function to the orbis namespace
     void trophy_subsystem_init() {
         // Initialize the trophy subsystem
         // ...
@@ -185,11 +192,6 @@ namespace orbis {
 
     void trophy_device_setup() {
         // Set up the trophy devices
-        // ...
-    }
-
-    void trophy_device_shutdown() {
-        // Shutdown the trophy devices
         // ...
     }
 }
@@ -210,28 +212,28 @@ public:
     ~ThemeManager() {}
 
     void addTheme(const Theme& theme) {
-        themes_.push_back(theme);
+        themes.push_back(theme);
     }
 
     void selectTheme(const std::string& themeName) {
-        for (const auto& theme : themes_) {
+        for (const auto& theme : themes) {
             if (theme.name == themeName) {
-                currentTheme_ = theme;
+                currentTheme = theme;
                 break;
             }
         }
     }
 
     const Theme& getCurrentTheme() const {
-        return currentTheme_;
+        return currentTheme;
     }
 
 private:
-    std::vector<Theme> themes_;
-    Theme currentTheme_;
+    std::vector<Theme> themes;
+    Theme currentTheme;
 };
 
-static VkDescriptorPool g_DescriptorPool = VK_NULL_HANDLE;
+static VkDescriptorPool gDescriptorPool = VK_NULL_HANDLE;
 ThemeManager themeManager;
 
 void ImGui_RenderCallback(VkCommandBuffer cmd) {
@@ -270,21 +272,23 @@ void RenderPS4Dashboard(ImGuiIO& io) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
     ImGui::Begin("PS4 Dashboard", nullptr,
-                 ImGuiWindowFlags_NoTitleBar 
+                 ImGuiWindowFlags_NoTitleBar
 //ImGuiWindowFlags_NoResize
-                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
-    // Top row – function icons
+                 
+
+ImGuiWindowFlags_NoMove
+ ImGuiWindowFlags_NoCollapse);
+    // Top row  function icons
     ImGui::Indent(60);
-    const char* icons[] = { "Store", "Friends", "Settings", "Power" };
+    const char* icons[] = {"Store", "Friends", "Settings", "Power"};
     for (int i = 0; i < 4; ++i) {
         if (ImGui::Button(icons[i], ImVec2(120, 40))) {}
         ImGui::SameLine(0, 20);
     }
-
-    // Middle row – game tiles (hard-coded for now)
+    // Middle row  game tiles (hard-coded for now)
     float contentY = io.DisplaySize.y * 0.35f;
     ImGui::SetCursorPos(ImVec2(100, contentY));
-    const char* games[] = { "Bloodborne", "Playroom", "The Last of Us Part II" };
+    const char* games[] = {"Bloodborne", "Playroom", "The Last of Us Part II"};
     for (int i = 0; i < 3; ++i) {
         ImGui::BeginGroup();
         if (ImGui::Button(games[i], ImVec2(240, 240))) {}
@@ -295,7 +299,7 @@ void RenderPS4Dashboard(ImGuiIO& io) {
 
     // Theme selection menu
     if (ImGui::BeginMenu("Themes")) {
-        for (const auto& theme : themeManager.themes_) {
+        for (const auto& theme : themeManager.themes) {
             if (ImGui::MenuItem(theme.name.c_str())) {
                 themeManager.selectTheme(theme.name);
             }
@@ -309,21 +313,21 @@ void RenderPS4Dashboard(ImGuiIO& io) {
 }
 
 /* ----------  Main  ---------- */
-int main(int, char*[]) {
-    if (SDL_Init(SDL_INIT_VIDEO 
+int main(int, char**) {
+    if (SDL_Init(SDL_INIT_VIDEO
 //SDL_INIT_TIMER	SDL_INIT_GAMEPAD
- SDL_INIT_AUDIO) != 0) {
+                  SDL_INIT_AUDIO) != 0) {
         std::printf("SDL_Init failed: %s\n", SDL_GetError());
         return -1;
     }
     SDL_Window* window = SDL_CreateWindow(
         "LayraPS4 - PS4 OS Emulator", 1920, 1080,
-        SDL_WINDOW_VULKAN 
+        SDL_WINDOW_VULKAN
 //SDL_WINDOW_RESIZABLE
- SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (!window) return -1;
     LayraVulkanContext vk{};
-    if (!layra_vulkan_init(&vk, window)) {
+    if (!layra_vulkan_init(vk, window)) {
         SDL_DestroyWindow(window);
         SDL_Quit();
         return -1;
@@ -333,8 +337,8 @@ int main(int, char*[]) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags 
-//= ImGuiConfigFlags_NavEnableKeyboard
+    io.ConfigFlags
+// = ImGuiConfigFlags_NavEnableKeyboard
 // ImGuiConfigFlags_NavEnableGamepad;
     // PS4 dark theme
     ImVec4* c = ImGui::GetStyle().Colors;
@@ -343,23 +347,38 @@ int main(int, char*[]) {
     c[ImGuiCol_ButtonHovered] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
 
     // Descriptor pool
-    VkDescriptorPoolSize pool_sizes[] = {
-        { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 }
+    VkDescriptorPoolSize poolSizes[] = {
+        {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+        {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000}
     };
-    VkDescriptorPoolCreateInfo pool_info{
+    VkDescriptorPoolCreateInfo poolInfo{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
         .maxSets = 1000,
-        .poolSizeCount = (uint32_t)IM_ARRAYSIZE(pool_sizes),
-        .pPoolSizes = pool_sizes
+        .poolSizeCount = static_cast<uint32_t>(IM_ARRAYSIZE(poolSizes)),
+        .pPoolSizes = poolSizes
     };
+    vkCreateDescriptorPool(vk.device, &poolInfo, nullptr, &gDescriptorPool);
 
-    // Initialize PS4 subsystems
+    ImGui_ImplSDL3_InitForVulkan(window);
+    ImGui_ImplVulkan_InitInfo initInfo{
+        .Instance = vk.instance,
+        .PhysicalDevice = vk.physicalDevice,
+        .Device = vk.device,
+        .QueueFamily = vk.graphicsQueueFamilyIndex,
+        .Queue = vk.graphicsQueue,
+        .DescriptorPool = gDescriptorPool,
+        .MinImageCount = 2,
+        .ImageCount = 3,
+        .MSAASamples = VK_SAMPLE_COUNT_1_BIT
+    };
+    ImGui_ImplVulkan_Init(initInfo);
+
+    // Initialize PS4 subsystems (stubs)
     orbis::audio_play_boot_sound();
     orbis::kernel_init(nullptr);
     orbis::modules_init();
@@ -368,51 +387,41 @@ int main(int, char*[]) {
     orbis::savedata_init();
     orbis::trophy_init();
 
-    // Run the main loop
     bool done = false;
-    Uint64 boot_start = SDL_GetTicks();
+    Uint64 bootStart = SDL_GetTicks();
+
     while (!done) {
-        // Handle events
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
             ImGui_ImplSDL3_ProcessEvent(&ev);
-            if (ev.type == SDL_EVENT_QUIT) done = true;
-            if (ev.type == SDL_EVENT_WINDOW_RESIZED)
-                layra_vulkan_recreate_swapchain(&vk, window);
+            if (ev.type == SDL_QUIT) done = true;
+            if (ev.type == SDL_WINDOWEVENT && ev.window.event == SDL_WINDOWEVENT_RESIZED)
+                layra_vulkan_recreate_swapchain(vk, window);
         }
 
-        // Update ImGui
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
-        // Render the PS4 boot sequence
-        if (SDL_GetTicks() - boot_start < 3000) {
+        if (SDL_GetTicks() - bootStart < 3000) {
             RenderPS4BootSequence(io);
         } else {
             RenderPS4Dashboard(io);
         }
 
-        // Render ImGui
         ImGui::Render();
-        layra_vulkan_render_frame(&vk, ImGui_RenderCallback);
-
-        // Swap the buffers
-        SDL_GL_SwapWindow(window);
+        layra_vulkan_render_frame(vk, ImGui_RenderCallback);
     }
-
-    // Shutdown the PS4 subsystems
-    orbis::kernel_shutdown(nullptr);
 
     // Cleanup
     vkDeviceWaitIdle(vk.device);
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
-    vkDestroyDescriptorPool(vk.device, g_DescriptorPool, nullptr);
-    layra_vulkan_cleanup(&vk);
+    vkDestroyDescriptorPool(vk.device, gDescriptorPool, nullptr);
+    layra_vulkan_cleanup(vk);
+    orbis::kernel_shutdown(nullptr); // Add this line to call the kernel_shutdown function
     SDL_DestroyWindow(window);
     SDL_Quit();
-
     return 0;
 }
