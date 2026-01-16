@@ -1,3 +1,4 @@
+LayraPS4/src/CMakeLIsts.txt
 add_library(layra_core STATIC
     cpu/jaguar_core.cpp
     memory/memory_manager.cpp
