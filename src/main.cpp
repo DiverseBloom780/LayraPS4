@@ -9,6 +9,7 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_vulkan.h"
 #include "core/system/emulator.h"
+
 // Global emulator instance
 std::unique_ptr<PS4::EmulatorCore> g_emulator
 
