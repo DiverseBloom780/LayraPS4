@@ -19,7 +19,6 @@ Public open-source emulators (such as ShadPS4, RPCS3, or Kyty) are studied **onl
 | Subsystem | Description | Status |
 |------------|--------------|--------|
 | **PKG Loader & Filesystem** | Support for `.pkg` game packages and virtual file system with `/app0/eboot.bin` mounting | ✅ Implemented |
-| **VFS Architecture** | Internal structure using `MntPoints` and `HandleTable` for file and directory management | ✅ Implemented |
 | **ImGui PS4 GUI** | Full PS4-style XMB interface with boot animation, themes, profiles, and system-like navigation | ⏳ In Progress |
 | **Virtual Portals** | Simulation of **Skylanders**, **Disney Infinity**, and **LEGO Dimensions** portals and figures | 🚧 Developing |
 | **Lightgun Support** | Emulation of lightgun devices and aiming calibration for supported titles | ⏳ Planned |
