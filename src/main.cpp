@@ -8,6 +8,10 @@
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_vulkan.h"
+#include "core/system/emulator.h"
+// Global emulator instance
+std::unique_ptr<PS4::EmulatorCore> g_emulator
+
 // Stubs (replace with real implementations later)
 namespace orbis {
     void audio_play_boot_sound() {
