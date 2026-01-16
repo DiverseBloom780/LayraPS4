@@ -342,6 +342,10 @@ int main(int, char**) {
                   SDL_INIT_AUDIO) != 0) {
         std::printf("SDL_Init failed: %s\n", SDL_GetError());
         return -1;
+// Initialize the emulator backend
+g_emulator = std::make_unique<PS4::EmulatorCore>();
+g_emulator->Initialize();
+
     }
     SDL_Window* window = SDL_CreateWindow(
         "LayraPS4 - PS4 OS Emulator", 1920, 1080,
