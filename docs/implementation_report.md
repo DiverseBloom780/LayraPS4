@@ -30,15 +30,7 @@ This report summarizes the progress made in integrating key functionalities into
 *   **File Extraction Placeholder:** A `layra_pkg_extract_file` function was introduced as a placeholder for extracting files, including a dummy decryption function. Full implementation of filename resolution and decryption keys is a future task.
 *   **Mounting Mechanism:** The `layra_pkg_open_and_mount` function was designed to open a PKG, parse its contents, extract them to a temporary directory, and then mount this directory into the Virtual File System.
 
-### 3. VFS (Virtual File System) Implementation
-
-**Objective:** Create a basic VFS to abstract file access and allow mounting of PKG contents.
-
-*   **Mount Point Management:** The `layra_vfs.c` file defines structures (`layra_vfs_mount_t`) and functions (`layra_vfs_init`, `layra_vfs_mount`, `layra_vfs_unmount`) to manage virtual mount points, mapping them to host system paths.
-*   **Path Resolution:** A `layra_vfs_resolve_path` function was implemented to translate virtual paths (e.g., `/app0/SLES_000.BIN`) to their corresponding physical paths on the host system.
-*   **File I/O Abstraction:** VFS-aware file I/O functions (`layra_vfs_fopen`, `layra_vfs_fclose`, `layra_vfs_fread`, `layra_vfs_fseek`, `layra_vfs_ftell`) were created to allow the emulator to access files through the VFS layer, regardless of their origin (e.g., extracted PKG or host filesystem).
-
-### 4. Windows Compatibility and Build System Configuration
+### 3. Windows Compatibility and Build System Configuration
 
 **Objective:** Configure the CMake build system to support compilation on Windows with Visual Studio or MinGW-w64.
 
