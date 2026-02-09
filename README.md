@@ -8,7 +8,7 @@ Built from the ground up in **C** with a clean **ImGui-based PS4-style interface
 
 ## 🔹 Project Overview
 
-LayraPS4 is currently under **active development** as a complete reimplementation of the PS4 emulation environment — including package handling, virtual filesystem, and device simulation.  
+LayraPS4 is currently under **active development** as a complete reimplementation of the PS4 emulation environment — including package handling, and device simulation.  
 It is **not** based on any existing emulator’s source code.  
 Public open-source emulators (such as ShadPS4, RPCS3, or Kyty) are studied **only for structural reference and documentation purposes**, **never for direct code reuse**.
 
@@ -18,9 +18,9 @@ Public open-source emulators (such as ShadPS4, RPCS3, or Kyty) are studied **onl
 
 | Subsystem | Description | Status |
 |------------|--------------|--------|
-| **PKG Loader & Filesystem** | Support for `.pkg` game packages and virtual file system with `/app0/eboot.bin` mounting | ✅ Implemented |
+| **PKG Loader & Filesystem** | Support for `.pkg` game packages | ✅ Implemented |
 | **ImGui PS4 GUI** | Full PS4-style XMB interface with boot animation, themes, profiles, and system-like navigation | ⏳ In Progress |
-| **Virtual Portals** | Simulation of **Skylanders**, **Disney Infinity**, and **LEGO Dimensions** portals and figures | 🚧 Developing |
+| **Virtual Portals** | Simulation of **Skylanders**, **Disney Infinity**, and **LEGO Dimensions** portals and figures | ✅️ implemented 
 | **Lightgun Support** | Emulation of lightgun devices and aiming calibration for supported titles | ⏳ Planned |
 | **LAN/Local Multiplayer** | Basic LAN stack for local cooperative or VS play over emulated network | ⏳ Planned |
 | **PSVR Integration** | Emulation layer for PSVR headset and motion devices | ⏳ Future Phase |
