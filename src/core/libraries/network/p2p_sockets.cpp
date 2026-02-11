@@ -1,131 +1,90 @@
 // SPDX-FileCopyrightText: Copyright 2025 LayraPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
-
-#include <common/assert.h>
+#include "common/log.h"
 #include "core/libraries/kernel/kernel.h"
-#include "net.h"
-#include "neterror.h"
-#include sockets.h"
+#include "core/libraries/network/net.h"
+#include "core/libraries/network/neterror.h"
+#include "core/libraries/network/sockets.h"
+#include <cstring>
 
 namespace Libraries::Net {
 
-// P2PSocket class
+static constexpr auto LibNet = "LibNet";
+
+// ----  Stubbed P2P socket class  ----
 class P2PSocket {
 public:
-    // Close the socket
-    int Close() {
-        // Log an error message
-        LOGERROR(LibNet, "(STUBBED) called");
+  int Close() {
+    LOG_ERROR(LibNet, "(STUBBED) P2P Close");
+    return 0; // success
+  }
 
- // Return 0 to indicate success
- return 0; 
- }
+  int SetSocketOptions(int level, int optname, const void *optval, u32 optlen) {
+    LOG_ERROR(LibNet, "(STUBBED) P2P SetSocketOptions");
+    return 0; // success
+  }
 
-    // Set socket options
-    int SetSocketOptions(int level, int optname, const void optval, u32 optlen) {
-        // Log an error message
-        LOGERROR(LibNet, "(STUBBED) called");
+  int GetSocketOptions(int level, int optname, void *optval, u32 optlen) {
+    LOG_ERROR(LibNet, "(STUBBED) P2P GetSocketOptions");
+    return 0; // success
+  }
 
- // Return 0 to indicate success
- return 0; 
- }
+  int Bind(const OrbisNetSockaddr *addr, u32 addrlen) {
+    LOG_ERROR(LibNet, "(STUBBED) P2P Bind");
+    return 0; // success
+  }
 
-    // Get socket options
-    int GetSocketOptions(int level, int optname, void optval, u32 optlen) {
-        // Log an error message
-        LOGERROR(LibNet, "(STUBBED) called");
+  int Listen(int backlog) {
+    LOG_ERROR(LibNet, "(STUBBED) P2P Listen");
+    return 0; // success
+  }
 
- // Return 0 to indicate success
- return 0; 
- }
+  int SendMessage(const OrbisNetMsghdr *msg, int flags) {
+    LOG_ERROR(LibNet, "(STUBBED) P2P SendMessage");
+    Libraries::Kernel::Error() = ORBIS_NET_EAGAIN;
+    return -1; // retry
+  }
 
-    // Bind the socket to a address
-    int Bind(const OrbisNetSockaddr addr, u32 addrlen) {
-        // Log an error message
-        LOGERROR(LibNet, "(STUBBED) called");
+  int SendPacket(const void *msg, u32 len, int flags,
+                 const OrbisNetSockaddr *to, u32 tolen) {
+    LOG_ERROR(LibNet, "(STUBBED) P2P SendPacket");
+    Libraries::Kernel::Error() = ORBIS_NET_EAGAIN;
+    return -1; // retry
+  }
 
- // Return 0 to indicate success
- return 0; 
- }
+  int ReceiveMessage(OrbisNetMsghdr *msg, int flags) {
+    LOG_ERROR(LibNet, "(STUBBED) P2P ReceiveMessage");
+    Libraries::Kernel::Error() = ORBIS_NET_EAGAIN;
+    return -1; // retry
+  }
 
-    // Listen for incoming connections
-    int Listen(int backlog) {
-        // Log an error message
-        LOGERROR(LibNet, "(STUBBED) called");
+  int ReceivePacket(void *buf, u32 len, int flags, OrbisNetSockaddr *from,
+                    u32 *fromlen) {
+    LOG_ERROR(LibNet, "(STUBBED) P2P ReceivePacket");
+    Libraries::Kernel::Error() = ORBIS_NET_EAGAIN;
+    return -1; // retry
+  }
 
- // Return 0 to indicate success
- return 0; 
- }
+  int Accept(OrbisNetSockaddr *addr, u32 *addrlen) {
+    LOG_ERROR(LibNet, "(STUBBED) P2P Accept");
+    Libraries::Kernel::Error() = ORBIS_NET_EAGAIN;
+    return -1; // retry
+  }
 
- // Send a message over the socket
- int SendMessage(const OrbisNetMsghdr msg, int flags) {
- // Log an error message
- LOGERROR(LibNet, "( STUBBED) called");
+  int Connect(const OrbisNetSockaddr *addr, u32 namelen) {
+    LOG_ERROR(LibNet, "(STUBBED) P2P Connect");
+    return 0; // success
+  }
 
-        // Set an error code and return -1 to indicate failure
-        Libraries::Kernel::Error() = ORBISNETEAGAIN;
-        return -1;
-    }
+  int GetSocketAddress(OrbisNetSockaddr *name, u32 namelen) {
+    LOG_ERROR(LibNet, "(STUBBED) P2P GetSocketAddress");
+    return 0; // success
+  }
 
-    // Send a packet over the socket
-    int SendPacket(const void msg, u32 len, int flags, const OrbisNetSockaddr to, u32 tolen) {
-        // Log an error message
-        LOGERROR(LibNet, "(STUBBED) called");
+  int GetPeerName(OrbisNetSockaddr *addr, u32 *namelen) {
+    LOG_ERROR(LibNet, "(STUBBED) P2P GetPeerName");
+    return 0; // success
+  }
+};
 
-        // Set an error code and return -1 to indicate failure
-        Libraries::Kernel::Error() = ORBISNETEAGAIN;
-        return -1;
-    }
-
-    // Receive a message from the socket
-    int ReceiveMessage(OrbisNetMsghdr msg, int flags) {
-        // Log an error message
-        LOGERROR(LibNet, "(STUBBED) called");
-
-        // Set an error code and return -1 to indicate failure
-        Libraries::Kernel::Error() = ORBISNETEAGAIN;
-        return -1;
-    }
-
-    // Receive a packet from the socket
-    int ReceivePacket(void buf, u32 len, int flags, OrbisNetSockaddr from, u32 fromlen) {
-        // Log an error message
-        LOGERROR(LibNet, "(STUBBED) called");
-
-        // Set an error code and return -1 to indicate failure
-        Libraries::Kernel::Error() = ORBISNETEAGAIN;
-        return -1;
-    }
-
-    // Accept an incoming connection
-    SocketPtr Accept(OrbisNetSockaddr addr, u32 addrlen) {
-        // Log an error message
-        LOGERROR(LibNet, "(STUBBED) called");
-
-        // Set an error code and return nullptr to indicate failure
-        Libraries::Kernel::Error() = ORBISNETEAGAIN;
-        return nullptr;
-    }
-
- // Connect to a remote address
- int Connect(const OrbisNetSockaddr addr, u32 namelen) {
- // Log an error message
- LOGERROR(LibNet, "( STUBBED) called");
-
- // Return 0 to indicate success
- return 0; 
- }
-
-    // Get the socket address
-    int GetSocketAddress(OrbisNetSockaddr name, u32 namelen) {
-        // Log an error message
-        LOGERROR(LibNet, "(STUBBED) called");
-
- // Return 0 to indicate success
- return 0; 
- }
-
-    // Get the peer name
-    int GetPeerName(OrbisNetSockaddr addr, u32* namelen) {
-        // Log an error message
-        LOGERROR(Lib_Net
+} // namespace Libraries::Net

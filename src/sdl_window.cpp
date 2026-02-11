@@ -1,70 +1,32 @@
-// SPDX-FileCopyrightText: Copyright 2025 LayraPS4 Emulator Project
-// SPDX-License-Identifier: GPL-2.0-or-later
-
+// LayraPS4 – SDL Window Implementation
+#include "sdl_window.h"
 #include "common/assert.h"
 #include "common/config.h"
 #include "common/elfinfo.h"
 #include "core/debugstate.h"
 #include "core/devtools/layer.h"
-#include "core/libraries/kernel/ time.h"
+#include "core/libraries/kernel/time.h"
 #include "core/libraries/pad/pad.h"
-#include "imgui/renderer/imguicore.h"
-#include "input/controller.h"
+#include "emulator.h"
 #include "input/inputhandler.h"
-#include "input/inputmouse.h"
-#include "sdlwindow.h"
-#include "videocore/ renderdoc.h"
+
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_vulkan.h>
+#include <iostream>
 
 #ifdef APPLE
 #include "SDL3/SDLmetal.h"
 #endif
 
+namespace {
+static constexpr auto LibWindow = "LibWindow";
+static constexpr auto LibInput = "LibInput";
+} // namespace
+
 namespace Input {
 
-using Libraries::Pad::OrbisPadButtonDataOffset;
-
-static OrbisPadButtonDataOffset SDLGamepadToOrbisButton(u8 button) {
-  using OPBDO = OrbisPadButtonDataOffset;
-
-  switch (button) {
-  case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
-    return OPBDO::Down;
-  case SDL_GAMEPAD_BUTTON_DPAD_UP:
-    return OPBDO::Up;
-  case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
-    return OPBDO::Left;
-  case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
-    return OPBDO::Right;
-  case SDL_GAMEPAD_BUTTON_SOUTH:
-    return OPBDO::Cross;
-  case SDL_GAMEPAD_BUTTON_NORTH:
-    return OPBDO::Triangle;
-  case SDL_GAMEPAD_BUTTON_WEST:
-    return OPBDO::Square;
-  case SDL_GAMEPAD_BUTTON_EAST:
-    return OPBDO::Circle;
-  case SDL_GAMEPAD_BUTTON_START:
-    return OPBDO::Options;
-  case SDL_GAMEPAD_BUTTON_TOUCHPAD:
-    return OPBDO::TouchPad;
-  case SDL_GAMEPAD_BUTTON_BACK:
-    return OPBDO::TouchPad;
-  case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
-    return OPBDO::L1;
-  case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
-    return OPBDO::R1;
-  case SDL_GAMEPAD_BUTTON_LEFT_STICK:
-    return OPBDO::L3;
-  case SDL_GAMEPAD_BUTTON_RIGHT_STICK:
-    return OPBDO::R3;
-  default:
-    return OPBDO::None;
-  }
-}
-
+// Helper for SDL Gamepad Axis mapping
 static SDL_GamepadAxis InputAxisToSDL(Axis axis) {
   switch (axis) {
   case Axis::LeftX:
@@ -80,7 +42,7 @@ static SDL_GamepadAxis InputAxisToSDL(Axis axis) {
   case Axis::TriggerRight:
     return SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
   default:
-    UNREACHABLE();
+    return SDL_GAMEPAD_AXIS_INVALID;
   }
 }
 
@@ -98,29 +60,72 @@ void SDLInputEngine::Init() {
 
   int gamepadcount;
   SDL_JoystickID *gamepads = SDL_GetGamepads(&gamepadcount);
-  if (!gamepads) {
-    LOGERROR(Input, "Cannot get gamepad list: {}", SDL_GetError());
+  if (!gamepads)
     return;
-  }
-  if (gamepadcount == 0) {
-    LOGINFO(Input, "No gamepad found!");
-    SDL_free(gamepads);
-    return;
-  }
 
   int selectedIndex = GamepadSelect::GetIndexfromGUID(
-      gamepads, gamepadcount, GamepadSelect::GetSelectedGamepad());
+      gamepads, gamepadcount, Config::getSelectedGamepad());
   int defaultIndex = GamepadSelect::GetIndexfromGUID(
       gamepads, gamepadcount, Config::getDefaultControllerID());
 
-  // If user selects a gamepad in the GUI, use that, otherwise try the default
-  if (!mgamepad) {
-    if (selectedIndex != -1) {
-      mgamepad = SDL_OpenGamepad(gamepads[selectedIndex]);
-      LOGINFO(Input, "Opening gamepad selected in GUI.");
-    } else if (defaultIndex != -1) {
-      mgamepad = SDL_OpenGamepad(gamepads[defaultIndex]);
-      LOGINFO(Input, "Opening default gamepad.");
-    } else {
-      mgamepad = SDL_OpenGamepad(gamepads[0]);
- LOGINFO(Input, "Got {} game
+  if (selectedIndex != -1) {
+    mgamepad = SDL_OpenGamepad(gamepads[selectedIndex]);
+  } else if (defaultIndex != -1) {
+    mgamepad = SDL_OpenGamepad(gamepads[defaultIndex]);
+  } else if (gamepadcount > 0) {
+    mgamepad = SDL_OpenGamepad(gamepads[0]);
+  }
+
+  SDL_free(gamepads);
+}
+
+} // namespace Input
+
+namespace Frontend {
+
+WindowSDL::WindowSDL(s32 width, s32 height, Input::GameController controller,
+                     Core::Emulator &emulator, std::string_view windowtitle)
+    : width(width), height(height), controller(controller), emulator(emulator) {
+
+  std::cout << "[Window] Creating SDL window: " << windowtitle << " (" << width
+            << "x" << height << ")\n";
+}
+
+WindowSDL::~WindowSDL() {
+  if (window) {
+    SDL_DestroyWindow(window);
+  }
+}
+
+s32 WindowSDL::GetWidth() const { return width; }
+s32 WindowSDL::GetHeight() const { return height; }
+bool WindowSDL::IsOpen() const { return is_open; }
+SDL_Window *WindowSDL::GetSDLWindow() const { return window; }
+
+WindowSystemInfo WindowSDL::GetWindowInfo() const { return windowinfo; }
+
+void WindowSDL::WaitEvent() {
+  SDL_Event event;
+  if (SDL_WaitEvent(&event)) {
+    if (event.type == SDL_EVENT_QUIT) {
+      is_open = false;
+    }
+    OnKeyboardMouseInput(event);
+    OnGamepadEvent(event);
+  }
+}
+
+void WindowSDL::InitTimers() {}
+void WindowSDL::RequestKeyboard() {}
+void WindowSDL::ReleaseKeyboard() {}
+void WindowSDL::OnResize() {}
+
+void WindowSDL::OnKeyboardMouseInput(const SDL_Event &event) {
+  // Basic event handling
+}
+
+void WindowSDL::OnGamepadEvent(const SDL_Event &event) {
+  // Basic gamepad event handling
+}
+
+} // namespace Frontend

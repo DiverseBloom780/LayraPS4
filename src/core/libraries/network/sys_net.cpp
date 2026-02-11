@@ -1,100 +1,98 @@
 // SPDX-FileCopyrightText: Copyright 2025 LayraPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
-
-#include <common/assert.h>
-#include <common/logging/log.h>
-#include <core/libraries/kernel/kernel.h>
-#include <magic enum/magicenum.hpp>
-#include "common/error.h"
+#include "common/log.h"
 #include "common/singleton.h"
-#include "core/filesys/fs.h"
-#include "neterror.h"
-#include "sockets.h"
-#include "sysnet.h"
+#include "core/filesys/handles.h"
+#include "core/libraries/kernel/kernel.h"
+#include "core/libraries/network/net.h"
+#include "core/libraries/network/neterror.h"
+#include "core/libraries/network/sockets.h"
+#include <cstring>
 
 namespace Libraries::Net {
 
+static constexpr auto LibNet = "LibNet";
+
 using FDTable = Common::Singleton<Core::FileSys::HandleTable>;
 
-// sysconnect function
-int PS4SYSVABI sysconnect(OrbisNetId s, const OrbisNetSockaddr addr, u32 addrlen) {
- // Get the socket file from the FDTable
- auto file = FDTable::Instance()->GetSocket(s); 
- if (!file) {
- // If the socket ID is invalid, return an error code
-  Libraries::Kernel::Error() = ORBISNETEBADF;
- LOGERROR(LibNet, "socket id is invalid = {}", s);
- return -1;
- } 
- // Log a debug message
- LOGDEBUG(LibNet, "s = {} ({})", s, file->mguestname);
- // Call the Connect function on the socket file 
- int returncode = file->socket->Connect(addr, addrlen); 
- if (returncode >= 0) {
- // If the return code is non-negative, return it
- return returncode;
- } 
- // Log an error message
- LOGERROR(LibNet, "s = {} ({}) returned error code: {}", s, file->mguestname,
- (u32)Libraries:: Kernel::Error()); 
- // Return an error code
- return -1; 
+// ----  sys_connect  ----
+int PS4_SYSV_ABI sys_connect(OrbisNetId s, const OrbisNetSockaddr *addr,
+                             u32 addrlen) {
+  auto file = FDTable::Instance().GetSocket(s);
+  if (!file) {
+    Libraries::Kernel::Error() = ORBIS_NET_EBADF;
+    LOG_ERROR(LibNet, "socket id is invalid = {}", static_cast<s32>(s));
+    return -1;
+  }
+  LOG_DEBUG(LibNet, "s = {} ({})", static_cast<s32>(s), file->mguestname);
+  int ret = file->socket->Connect(addr, addrlen);
+  if (ret < 0) {
+    LOG_ERROR(LibNet, "s = {} ({}) returned error code: {}",
+              static_cast<s32>(s), file->mguestname,
+              static_cast<u32>(Libraries::Kernel::Error()));
+    return -1;
+  }
+  return ret;
 }
 
-// sysbind function
-int PS4SYSVABI sysbind(OrbisNetId s, const OrbisNetSockaddr addr, u32 addrlen) {
- // Get the socket file from the FDTable
- auto file = FDTable::Instance()->GetSocket(s); 
- if (!file) {
- // If the socket ID is invalid, return an error code
-  Libraries::Kernel::Error() = ORBISNETEBADF;
- LOGERROR(LibNet, "socket id is invalid = {}", s);
- return -1;
- } 
- // Log a debug message
- LOGDEBUG(LibNet, "s = {} ({})", s, file->mguestname);
- // Call the Bind function on the socket file 
- int returncode = file->socket->Bind(addr, addrlen); 
- if (returncode >= 0) {
- // If the return code is non-negative, return it
- return returncode;
- } 
- // Log an error message
- LOGERROR(LibNet, "error code returned: {}", (u32)Libraries::Kernel::Error()); 
- // Return an error code
- return -1; 
+// ----  sys_bind  ----
+int PS4_SYSV_ABI sys_bind(OrbisNetId s, const OrbisNetSockaddr *addr,
+                          u32 addrlen) {
+  auto file = FDTable::Instance().GetSocket(s);
+  if (!file) {
+    Libraries::Kernel::Error() = ORBIS_NET_EBADF;
+    LOG_ERROR(LibNet, "socket id is invalid = {}", static_cast<s32>(s));
+    return -1;
+  }
+  LOG_DEBUG(LibNet, "s = {} ({})", static_cast<s32>(s), file->mguestname);
+  int ret = file->socket->Bind(addr, addrlen);
+  if (ret < 0) {
+    LOG_ERROR(LibNet, "error code returned: {}",
+              static_cast<u32>(Libraries::Kernel::Error()));
+    return -1;
+  }
+  return ret;
 }
 
-// sysaccept function
-int PS4SYSVABI sysaccept(OrbisNetId s, OrbisNetSockaddr addr, u32 paddrlen) {
- // Get the socket file from the FDTable
- auto file = FDTable::Instance()->GetSocket(s); 
- if (!file) {
- // If the socket ID is invalid, return an error code
-  Libraries::Kernel::Error() = ORBISNETEBADF;
- LOGERROR(LibNet, "socket id is invalid = {}", s);
- return -1;
- } 
- // Log a debug message
- LOGDEBUG(LibNet, "s = {} ({})", s, file->mguestname);
- // Call the Accept function on the socket file 
- auto newsock = file->socket->Accept(addr, paddrlen); 
- if (!newsock) {
- // If the Accept function returns an error, log an error message
- LOGERROR(LibNet, "s = {} ({}) returned error code creating new socket for accepting: {}",
- s, file->mguestname, (u32)Libraries::Kernel::Error()); 
- // Return an error code
- return -1; 
- }
- // Create a new file for the accepted socket
- auto fd = FDTable::Instance()->CreateHandle(); 
- auto newfile = FDTable::Instance()->GetFile(fd); 
- newfile->isopened = true; 
- newfile->type = Core::FileSys::FileType::Socket;
- newfile->socket = newsock;
- // Return the file descriptor of the new socket
- return fd; 
+// ----  sys_accept  ----
+int PS4_SYSV_ABI sys_accept(OrbisNetId s, OrbisNetSockaddr *addr,
+                            u32 *paddrlen) {
+  auto file = FDTable::Instance().GetSocket(s);
+  if (!file) {
+    Libraries::Kernel::Error() = ORBIS_NET_EBADF;
+    LOG_ERROR(LibNet, "socket id is invalid = {}", static_cast<s32>(s));
+    return -1;
+  }
+  LOG_DEBUG(LibNet, "s = {} ({})", static_cast<s32>(s), file->mguestname);
+  auto newsock = file->socket->Accept(addr, paddrlen);
+  if (!newsock) {
+    LOG_ERROR(
+        LibNet,
+        "s = {} ({}) returned error code creating new socket for accepting: {}",
+        static_cast<s32>(s), file->mguestname,
+        static_cast<u32>(Libraries::Kernel::Error()));
+    return -1;
+  }
+  // Create new file for accepted socket
+  auto fd = FDTable::Instance().CreateHandle();
+  auto newfile = FDTable::Instance().GetFile(fd);
+  newfile->is_opened = true;
+  newfile->type = Core::FileSys::FileType::Socket;
+  newfile->socket = newsock;
+  return fd;
 }
 
-// sysgetpeername function
-int PS4SYSVABI sys_getpeername(OrbisNetId s, OrbisNetSockaddr
+// ----  sys_getpeername  ----
+int PS4_SYSV_ABI sys_getpeername(OrbisNetId s, OrbisNetSockaddr *addr,
+                                 u32 *namelen) {
+  auto file = FDTable::Instance().GetSocket(s);
+  if (!file) {
+    Libraries::Kernel::Error() = ORBIS_NET_EBADF;
+    LOG_ERROR(LibNet, "socket id is invalid = {}", static_cast<s32>(s));
+    return -1;
+  }
+  LOG_DEBUG(LibNet, "s = {} ({})", static_cast<s32>(s), file->mguestname);
+  return file->socket->GetPeerName(addr, namelen);
+}
+
+} // namespace Libraries::Net

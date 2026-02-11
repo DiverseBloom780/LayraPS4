@@ -5,8 +5,8 @@
 #define VK_USE_PLATFORM_WIN32_KHR
 #endif
 
-#include <SDL.h>
-#include <SDL_vulkan.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
 
 #include <stdbool.h>

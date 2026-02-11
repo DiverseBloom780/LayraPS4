@@ -3,52 +3,56 @@
 
 #pragma once
 
-#include <string>
+#include <string_view>
 
 #include "common/types.h"
 #include "core/libraries/pad/pad.h"
+#include "emulator.h"
 
 namespace Core {
 class Emulator;
 }
 
-#include "input/controller.h"
+#include "input/inputhandler.h"
+#include <SDL3/SDL.h>
 
-struct SDLWindow;
-struct SDLGamepad; 
-union SDLEvent;
+struct SDL_Window;
+struct SDL_Gamepad;
 
 namespace Input {
 
 class SDLInputEngine : public Engine {
 public:
-    // Destructor
-    ~SDLInputEngine() override;
+  // Destructor
+  ~SDLInputEngine() override;
 
-    // Initialize the input engine
-    void Init() override;
+  // Initialize the input engine
+  void Init() override;
 
-    // Set the light bar RGB values
-    void SetLightBarRGB(u8 r, u8 g, u8 b) override;
+  // Set the light bar RGB values
+  void SetLightBarRGB(u8 r, u8 g, u8 b) override {}
 
-    // Set the vibration motor values
-    void SetVibration(u8 smallMotor, u8 largeMotor) override;
+  // Set the vibration motor values
+  void SetVibration(u8 smallMotor, u8 largeMotor) override {}
 
-    // Get the gyro poll rate
-    float GetGyroPollRate() const override;
+  // Get the gyro poll rate
+  float GetGyroPollRate() const override { return mgyropollrate; }
 
-    // Get the accel poll rate
-    float GetAccelPollRate() const override;
+  // Get the accel poll rate
+  float GetAccelPollRate() const override { return maccelpollrate; }
 
-    // Read the current state
-    State ReadState() override;
+  // Read the current state
+  State ReadState() override { return {}; }
 
 private:
-    // Gyro poll rate
-    float mgyropollrate = 0.0f;
+  // Gyro poll rate
+  float mgyropollrate = 0.0f;
 
-    // Accel poll rate
-    float maccelpollrate = 0.0f;
+  // Accel poll rate
+  float maccelpollrate = 0.0f;
+
+  // Gamepad
+  SDL_Gamepad *mgamepad = nullptr;
 };
 
 } // namespace Input
@@ -57,111 +61,111 @@ namespace Frontend {
 
 // Enum for window system types
 enum class WindowSystemType : u8 {
-    // Headless mode
-    Headless,
+  // Headless mode
+  Headless,
 
-    // Windows platform
-    Windows,
+  // Windows platform
+  Windows,
 
-    // X11 platform
-    X11,
+  // X11 platform
+  X11,
 
-    // Wayland platform
-    Wayland,
+  // Wayland platform
+  Wayland,
 
-    // Metal platform
-    Metal,
+  // Metal platform
+  Metal,
 };
 
 // Structure for window system information
 struct WindowSystemInfo {
-    // Connection to a display server
-    void displayconnection = nullptr;
+  // Connection to a display server
+  void *displayconnection = nullptr;
 
-    // Render surface
-    void rendersurface = nullptr;
+  // Render surface
+  void *rendersurface = nullptr;
 
-    // Scale of the render surface
-    float rendersurfacescale = 1.0f;
+  // Scale of the render surface
+  float rendersurfacescale = 1.0f;
 
-    // Window system type
-    WindowSystemType type = WindowSystemType::Headless;
+  // Window system type
+  WindowSystemType type = WindowSystemType::Headless;
 };
 
 // Class for SDL window
 class WindowSDL {
-    // Keyboard grab count
-    int keyboardgrab = 0;
+  // Keyboard grab count
+  int keyboardgrab = 0;
 
 public:
-    // Constructor
-    explicit WindowSDL(s32 width, s32 height, Input::GameController controller, Core::Emulator emulator,
-                       std::stringview windowtitle);
+  // Constructor
+  explicit WindowSDL(s32 width, s32 height, Input::GameController controller,
+                     Core::Emulator &emulator, std::string_view windowtitle);
 
-    // Destructor
-    ~WindowSDL();
+  // Destructor
+  ~WindowSDL();
 
-    // Get the width
-    s32 GetWidth() const;
+  // Get the width
+  s32 GetWidth() const;
 
-    // Get the height
-    s32 GetHeight() const;
+  // Get the height
+  s32 GetHeight() const;
 
-    // Check if the window is open
-    bool IsOpen() const;
+  // Check if the window is open
+  bool IsOpen() const;
 
-    // Get the SDL window
-    [[nodiscard]] SDLWindow GetSDLWindow() const;
+  // Get the SDL window
+  [[nodiscard]] SDL_Window *GetSDLWindow() const;
 
-    // Get the window system information
-    WindowSystemInfo GetWindowInfo() const;
+  // Get the window system information
+  WindowSystemInfo GetWindowInfo() const;
 
-    // Wait for an event
-    void WaitEvent();
+  // Wait for an event
+  void WaitEvent();
 
-    // Initialize the timers
-    void InitTimers();
+  // Initialize the timers
+  void InitTimers();
 
-    // Request the keyboard
-    void RequestKeyboard();
+  // Request the keyboard
+  void RequestKeyboard();
 
-    // Release the keyboard
-    void ReleaseKeyboard();
-
-private:
-    // On resize
-    void OnResize();
-
-    // On keyboard mouse input
-    void OnKeyboardMouseInput(const SDLEvent event);
-
-    // On gamepad event
-    void OnGamepadEvent(const SDLEvent event);
+  // Release the keyboard
+  void ReleaseKeyboard();
 
 private:
-    // Width
-    s32 width;
+  // On resize
+  void OnResize();
 
-    // Height
-    s32 height;
+  // On keyboard mouse input
+  void OnKeyboardMouseInput(const SDL_Event &event);
 
-    // Controller
-    Input::GameController controller;
+  // On gamepad event
+  void OnGamepadEvent(const SDL_Event &event);
 
-    // Emulator
-    Core::Emulator emulator;
+private:
+  // Width
+  s32 width;
 
-    // Window system information
-    WindowSystemInfo windowinfo{};
+  // Height
+  s32 height;
 
-    // SDL window
-    SDLWindow window{};
+  // Controller
+  Input::GameController controller;
 
-    // Whether the window is shown
-    bool isshown{};
+  // Emulator
+  Core::Emulator &emulator;
 
-    // Whether the window is open
-    bool is_open{true};
+  // Window system information
+  WindowSystemInfo windowinfo{};
+
+  // SDL window
+  SDL_Window *window = nullptr;
+
+  // Whether the window is shown
+  bool isshown{};
+
+  // Whether the window is open
+  bool is_open{true};
 };
 
 } // namespace Frontend
