@@ -1,10 +1,14 @@
-// LayraPS4 – PS4 OS Emulator (error-free build)
+// main.cpp - Updated to use authentic PS4 UI
+// SPDX-FileCopyrightText: Copyright 2025 LayraPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "../lib/imgui/backends/imgui_impl_sdl3.h"
 #include "../lib/imgui/backends/imgui_impl_vulkan.h"
 #include "imgui.h"
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
+
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -12,353 +16,110 @@
 #include <string>
 #include <vector>
 
-// GUI includes
+#include "core/orbis_system.h"
+#include "emulator.h"
+#include "gui/ps4_ui.h"
 #include "layra_pkg.h"
 #include "layra_vulkan.h"
 
-// Forward declarations
-namespace PS4 {
-namespace OS {
-class OrbisSystem {
-public:
-  void Initialize() {}
-  void Shutdown() {}
-  uint32_t GetCurrentPID() { return 1; }
-};
-} // namespace OS
-class EmulatorCore {
-public:
-  bool Initialize() { return true; }
-  bool IsInitialized() const { return true; }
-  bool IsRunning() const { return false; }
-  void Run() {}
-  void Pause() {}
-  void StepCPU() {}
-  void *GetMemoryManager() { return nullptr; }
-};
-} // namespace PS4
+// Global instance
+std::unique_ptr<Core::Emulator> g_emulator_instance;
 
-// Global instances
-std::unique_ptr<PS4::OS::OrbisSystem> g_orbis_system;
-std::unique_ptr<PS4::EmulatorCore> g_emulator;
-
-// ============================================================================
-// Orbis OS Stubs (Replace with real implementations as you build them)
-// ============================================================================
-namespace orbis {
-// Audio boot sound
-void audio_play_boot_sound() {
-  // TODO: Update for SDL3 Audio Stream API
-  // For now, disabling audio to fix build
-  printf("[Orbis] Boot sound disabled for SDL3 porting\n");
-}
-
-// Initialize Orbis kernel through our OS emulation layer
-void kernel_init(void *arg) {
-  printf("[Orbis] Initializing kernel...\n");
-
-  if (g_orbis_system) {
-    g_orbis_system->Initialize();
-    printf("[Orbis] OS emulation initialized\n");
-  }
-}
-
-void kernel_shutdown(void *arg) {
-  printf("[Orbis] Shutting down kernel...\n");
-
-  if (g_orbis_system) {
-    g_orbis_system->Shutdown();
-  }
-}
-
-// Placeholder implementations for other subsystems
-void modules_init() { printf("[Orbis] Initializing modules...\n"); }
-
-void audio_init() { printf("[Orbis] Initializing audio...\n"); }
-
-void pad_init() { printf("[Orbis] Initializing controller...\n"); }
-
-void savedata_init() { printf("[Orbis] Initializing savedata...\n"); }
-
-void trophy_init() { printf("[Orbis] Initializing trophy system...\n"); }
-
-// Stub functions (will be implemented as needed)
-void kernel_memory_init() {}
-void kernel_memory_shutdown() {}
-void kernel_thread_init() {}
-void kernel_thread_shutdown() {}
-void module_load(const std::string &name) {}
-void module_init(const std::string &name) {}
-void audio_subsystem_init() {}
-void audio_subsystem_shutdown() {}
-void audio_device_setup() {}
-void audio_device_shutdown() {}
-void pad_subsystem_init() {}
-void pad_subsystem_shutdown() {}
-void pad_device_setup() {}
-void pad_device_shutdown() {}
-void savedata_subsystem_init() {}
-void savedata_subsystem_shutdown() {}
-void savedata_device_setup() {}
-void savedata_device_shutdown() {}
-void trophy_subsystem_init() {}
-void trophy_subsystem_shutdown() {}
-void trophy_device_setup() {}
-} // namespace orbis
-
-// ============================================================================
-// GUI Theme Management
-// ============================================================================
-struct Theme {
-  std::string name;
-  ImVec4 backgroundColor;
-  ImVec4 buttonColor;
-  ImVec4 buttonHoverColor;
-};
-
-class ThemeManager {
-public:
-  ThemeManager() {}
-  ~ThemeManager() {}
-
-  void addTheme(const Theme &theme) { themes.push_back(theme); }
-
-  void selectTheme(const std::string &themeName) {
-    for (const auto &theme : themes) {
-      if (theme.name == themeName) {
-        currentTheme = theme;
-        break;
-      }
-    }
-  }
-
-  const Theme &getCurrentTheme() const { return currentTheme; }
-
-private:
-  std::vector<Theme> themes;
-  Theme currentTheme;
-};
-
+// Static globals
 static VkDescriptorPool gDescriptorPool = VK_NULL_HANDLE;
-static ThemeManager themeManager;
 
-// ============================================================================
-// Vulkan Rendering Callback
-// ============================================================================
+// Forward declarations
+void ImGui_RenderCallback(VkCommandBuffer cmd);
+void RenderPS4BootSequence(ImGuiIO &io);
+
+// Implementation of render callback
 void ImGui_RenderCallback(VkCommandBuffer cmd) {
   ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 }
 
-// ============================================================================
-// PS4 Boot Sequence GUI
-// ============================================================================
+// PS4 Boot Sequence Rendering
 void RenderPS4BootSequence(ImGuiIO &io) {
-  static Uint64 start = SDL_GetTicks();
-  Uint64 now = SDL_GetTicks();
-  float alpha = (now - start) < 2000 ? 1.0f : 0.0f;
-
   ImGui::SetNextWindowPos(ImVec2(0, 0));
   ImGui::SetNextWindowSize(io.DisplaySize);
-  ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, alpha));
+  ImGui::Begin("##BootSequence", nullptr,
+               ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                   ImGuiWindowFlags_NoScrollWithMouse |
+                   ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBackground);
 
-  ImGui::Begin("Boot", nullptr,
-               ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove);
+  // Center the boot logo/text
+  ImVec2 center = ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
 
-  // Display boot status based on initialization progress
-  ImVec2 txt;
-  if (g_emulator && g_emulator->IsInitialized()) {
-    txt = ImGui::CalcTextSize("LayraPS4 - Orbis OS Ready");
-    ImGui::SetCursorPos((io.DisplaySize - txt) * 0.5f);
-    ImGui::Text("LayraPS4 - Orbis OS Ready");
-  } else {
-    txt = ImGui::CalcTextSize("LayraPS4 - Booting Orbis OS...");
-    ImGui::SetCursorPos((io.DisplaySize - txt) * 0.5f);
-    ImGui::Text("LayraPS4 - Booting Orbis OS...");
-  }
-
-  // Add boot progress bar
-  float progress = std::min((now - start) / 2000.0f, 1.0f);
+  // Draw PlayStation logo text (simplified)
+  const char *bootText = "PlayStation 4";
+  ImVec2 textSize = ImGui::CalcTextSize(bootText);
   ImGui::SetCursorPos(
-      ImVec2(io.DisplaySize.x * 0.25f, io.DisplaySize.y * 0.6f));
-  ImGui::ProgressBar(progress, ImVec2(io.DisplaySize.x * 0.5f, 20.0f));
+      ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f));
+
+  // Pulse effect based on time
+  float time = SDL_GetTicks() / 1000.0f;
+  float alpha = 0.5f + 0.5f * sinf(time * 3.0f);
+  ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, alpha));
+  ImGui::Text("%s", bootText);
+  ImGui::PopStyleColor();
+
+  // Loading indicator
+  ImGui::SetCursorPos(ImVec2(center.x - 50, center.y + 50));
+  ImGui::Text("Loading...");
 
   ImGui::End();
-  ImGui::PopStyleColor();
 }
 
-// ============================================================================
-// PS4 Dashboard GUI
-// ============================================================================
-void RenderPS4Dashboard(ImGuiIO &io) {
-  // Initialize themes if not already done
-  if (themeManager.getCurrentTheme().name.empty()) {
-    themeManager.addTheme(Theme{"Default", ImVec4(0.06f, 0.08f, 0.12f, 0.95f),
-                                ImVec4(0.16f, 0.29f, 0.48f, 0.40f),
-                                ImVec4(0.26f, 0.59f, 0.98f, 1.00f)});
-    themeManager.addTheme(Theme{"Dark", ImVec4(0.02f, 0.02f, 0.02f, 0.95f),
-                                ImVec4(0.08f, 0.08f, 0.08f, 0.40f),
-                                ImVec4(0.12f, 0.12f, 0.12f, 1.00f)});
-    themeManager.selectTheme("Default");
-  }
-
-  const Theme &currentTheme = themeManager.getCurrentTheme();
-  ImGui::SetNextWindowPos(ImVec2(0, 0));
-  ImGui::SetNextWindowSize(io.DisplaySize);
-  ImGui::PushStyleColor(ImGuiCol_WindowBg, currentTheme.backgroundColor);
-  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-
-  ImGui::Begin("PS4 Dashboard", nullptr,
-               ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove |
-                   ImGuiWindowFlags_NoCollapse);
-
-  // Emulator status bar
-  ImGui::SetCursorPos(ImVec2(20, 20));
-  if (g_emulator) {
-    ImGui::Text("LayraPS4 | Backend: %s | OS: %s",
-                g_emulator->IsInitialized() ? "Ready" : "Initializing",
-                g_orbis_system ? "Orbis OS Active" : "OS Not Loaded");
-  }
-
-  // Top row function icons
-  ImGui::SetCursorPos(ImVec2(60, 80));
-  const char *icons[] = {"Store", "Friends", "Settings", "Power", "Emulator"};
-  for (int i = 0; i < 5; ++i) {
-    if (ImGui::Button(icons[i], ImVec2(120, 40))) {
-      // Handle button clicks
-      if (strcmp(icons[i], "Emulator") == 0) {
-        // Open emulator control panel
-        static bool show_emulator_panel = false;
-        show_emulator_panel = !show_emulator_panel;
-      } else if (strcmp(icons[i], "Power") == 0) {
-        // Handle shutdown
-        SDL_Event quit_event;
-        quit_event.type = SDL_EVENT_QUIT;
-        SDL_PushEvent(&quit_event);
-      }
-    }
-    ImGui::SameLine(0, 20);
-  }
-
-  // Middle row - game tiles
-  float contentY = io.DisplaySize.y * 0.35f;
-  ImGui::SetCursorPos(ImVec2(100, contentY));
-  const char *games[] = {"Bloodborne", "Playroom", "The Last of Us Part II",
-                         "Load PKG..."};
-  for (int i = 0; i < 4; ++i) {
-    ImGui::BeginGroup();
-    if (ImGui::Button(games[i], ImVec2(240, 240))) {
-      if (strcmp(games[i], "Load PKG...") == 0) {
-        // Open file dialog to load PKG
-        // (You'll need to implement this)
-        printf("[GUI] Load PKG requested\n");
-      }
-    }
-    ImGui::Text("%s", games[i]);
-    ImGui::EndGroup();
-    ImGui::SameLine(0, 30);
-  }
-
-  // Theme selection (moved to settings)
-
-  // Debug panel (optional)
-  static bool show_debug = false;
-  if (ImGui::Button("Debug", ImVec2(80, 30))) {
-    show_debug = !show_debug;
-  }
-
-  if (show_debug) {
-    ImGui::Begin("Debug Panel", &show_debug, ImGuiWindowFlags_AlwaysAutoResize);
-    if (g_emulator) {
-      ImGui::Text("Emulator State: %s",
-                  g_emulator->IsRunning() ? "Running" : "Stopped");
-      ImGui::Text("Memory Manager: %s",
-                  g_emulator->GetMemoryManager() ? "Ready" : "None");
-    }
-    if (g_orbis_system) {
-      ImGui::Text("OS Layer: Active");
-      ImGui::Text("Current PID: %u", g_orbis_system->GetCurrentPID());
-    }
-    ImGui::End();
-  }
-
-  ImGui::End();
-  ImGui::PopStyleVar();
-  ImGui::PopStyleColor();
-}
-
-// ============================================================================
-// Main Entry Point
-// ============================================================================
 int main(int argc, char **argv) {
-  printf("LayraPS4 - PS4 OS Emulator\n");
-  printf("==========================\n");
+  printf("========================================\n");
+  printf("LayraPS4 - PlayStation 4 OS Emulator\n");
+  printf("========================================\n\n");
 
-  // Initialize SDL
+  // SDL_Init returns 0 on success, non-zero on failure
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
-    printf("SDL_Init failed: %s\n", SDL_GetError());
+    printf("ERROR: SDL_Init failed: %s\n", SDL_GetError());
     return -1;
   }
 
-  // Create main window
   SDL_Window *window =
-      SDL_CreateWindow("LayraPS4 - PS4 OS Emulator", 1920, 1080,
+      SDL_CreateWindow("LayraPS4", 1920, 1080,
                        SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 
   if (!window) {
-    printf("Failed to create window: %s\n", SDL_GetError());
+    printf("ERROR: Failed to create window: %s\n", SDL_GetError());
     SDL_Quit();
     return -1;
   }
 
-  // Initialize Vulkan context
   LayraVulkanContext vk{};
   if (!layra_vulkan_init(&vk, window)) {
+    printf("FATAL: Failed to initialize Vulkan\n");
     SDL_DestroyWindow(window);
     SDL_Quit();
     return -1;
   }
 
-  // ========================================================================
-  // CRITICAL: Initialize Emulator Backend and OS Layer
-  // ========================================================================
-  printf("Initializing emulator backend...\n");
+  // Initialize Emulator
+  printf("\n[Main] Creating emulator instance...\n");
+  g_emulator_instance = std::make_unique<Core::Emulator>();
 
-  try {
-    // Create OS emulation layer first
-    g_orbis_system = std::make_unique<PS4::OS::OrbisSystem>();
-    printf("OS emulation layer created\n");
-
-    // Create hardware emulation layer
-    g_emulator = std::make_unique<PS4::EmulatorCore>();
-
-    // Initialize the emulator backend
-    if (g_emulator->Initialize()) {
-      printf("Emulator backend initialized successfully\n");
-    } else {
-      printf("Warning: Emulator backend initialization had issues\n");
-    }
-
-  } catch (const std::exception &e) {
-    printf("FATAL: Failed to initialize emulator: %s\n", e.what());
+  printf("[Main] Initializing emulator...\n");
+  if (!g_emulator_instance->Initialize()) {
+    printf("FATAL: Failed to initialize emulator\n");
+    layra_vulkan_cleanup(&vk);
     SDL_DestroyWindow(window);
     SDL_Quit();
     return -1;
   }
+  printf("[Main] Emulator initialized successfully\n\n");
 
   // Initialize ImGui
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImGuiIO &io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-
-  // Set PS4 dark theme
   ImGui::StyleColorsDark();
-  ImVec4 *colors = ImGui::GetStyle().Colors;
-  colors[ImGuiCol_WindowBg] = ImVec4(0.06f, 0.08f, 0.12f, 0.95f);
-  colors[ImGuiCol_Button] = ImVec4(0.16f, 0.29f, 0.48f, 0.40f);
-  colors[ImGuiCol_ButtonHovered] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
 
-  // Create Vulkan descriptor pool
   VkDescriptorPoolSize poolSizes[] = {
       {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
       {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
@@ -376,15 +137,17 @@ int main(int argc, char **argv) {
 
   if (vkCreateDescriptorPool(vk.device, &poolInfo, nullptr, &gDescriptorPool) !=
       VK_SUCCESS) {
-    printf("Failed to create descriptor pool\n");
+    printf("FATAL: Failed to create descriptor pool\n");
+    g_emulator_instance.reset();
+    layra_vulkan_cleanup(&vk);
     SDL_DestroyWindow(window);
     SDL_Quit();
     return -1;
   }
 
-  // Initialize ImGui backends
   ImGui_ImplSDL3_InitForVulkan(window);
   ImGui_ImplVulkan_InitInfo initInfo{
+      .ApiVersion = VK_API_VERSION_1_0,
       .Instance = vk.instance,
       .PhysicalDevice = vk.physicalDevice,
       .Device = vk.device,
@@ -393,125 +156,109 @@ int main(int argc, char **argv) {
       .DescriptorPool = gDescriptorPool,
       .MinImageCount = 2,
       .ImageCount = 3,
-      .PipelineInfoMain = {.MSAASamples = VK_SAMPLE_COUNT_1_BIT}};
-  ImGui_ImplVulkan_Init(&initInfo);
+      .PipelineInfoMain =
+          {
+              .RenderPass = vk.renderPass,
+              .Subpass = 0,
+              .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
+          },
+  };
 
-  // ========================================================================
-  // Initialize PS4 Subsystems (Through our OS layer)
-  // ========================================================================
-  printf("Initializing PS4 subsystems...\n");
+  if (!ImGui_ImplVulkan_Init(&initInfo)) {
+    printf("FATAL: Failed to initialize ImGui Vulkan backend\n");
+    vkDestroyDescriptorPool(vk.device, gDescriptorPool, nullptr);
+    g_emulator_instance.reset();
+    layra_vulkan_cleanup(&vk);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    return -1;
+  }
 
-  // Play boot sound
-  orbis::audio_play_boot_sound();
+  // Initialize PS4 UI
+  printf("[Main] Initializing PS4 UI...\n");
+  Gui::PS4UI::Initialize();
+  printf("[Main] PS4 UI initialized\n\n");
 
-  // Initialize kernel (this now uses our OS emulation layer)
-  orbis::kernel_init(nullptr);
+  printf("[Main] Entering main loop...\n\n");
 
-  // Initialize other subsystems
-  orbis::modules_init();
-  orbis::audio_init();
-  orbis::pad_init();
-  orbis::savedata_init();
-  orbis::trophy_init();
-
-  printf("Initialization complete. Starting main loop...\n");
-
-  // Main emulation loop
   bool done = false;
   Uint64 bootStart = SDL_GetTicks();
-  Uint64 lastUpdate = SDL_GetTicks();
+  bool boot_complete = false;
 
   while (!done) {
-    // Calculate delta time
-    Uint64 currentTime = SDL_GetTicks();
-    float deltaTime = (currentTime - lastUpdate) / 1000.0f;
-    lastUpdate = currentTime;
-
     // Process events
     SDL_Event ev;
     while (SDL_PollEvent(&ev)) {
       ImGui_ImplSDL3_ProcessEvent(&ev);
-
       if (ev.type == SDL_EVENT_QUIT) {
+        printf("\n[Main] Quit event received\n");
         done = true;
       }
-
-      if (ev.type == SDL_EVENT_WINDOW_RESIZED) {
-        layra_vulkan_recreate_swapchain(&vk, window);
-      }
-
-      // Handle keyboard shortcuts
       if (ev.type == SDL_EVENT_KEY_DOWN) {
         if (ev.key.key == SDLK_ESCAPE) {
+          printf("\n[Main] ESC pressed, exiting...\n");
           done = true;
-        } else if (ev.key.key == SDLK_F1) {
-          // Toggle emulator run/pause
-          if (g_emulator) {
-            if (g_emulator->IsRunning()) {
-              g_emulator->Pause();
-            } else {
-              g_emulator->Run();
-            }
-          }
         }
       }
     }
 
-    // Start new ImGui frame
+    // Start ImGui frame
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
-    // Render appropriate screen based on boot time
+    // Show boot sequence for 3 seconds, then PS4 UI
     if (SDL_GetTicks() - bootStart < 3000) {
       RenderPS4BootSequence(io);
     } else {
-      RenderPS4Dashboard(io);
+      if (!boot_complete) {
+        printf("[Main] Boot complete, showing PS4 UI\n");
+        boot_complete = true;
+      }
+      
+      // Handle PS4 UI input
+      Gui::PS4UI::HandleInput();
+      
+      // Render PS4 UI
+      Gui::PS4UI::Render();
     }
 
-    // If emulator is running, step it
-    if (g_emulator && g_emulator->IsRunning()) {
-      // Run CPU for a few cycles
-      // This is where the actual emulation happens
-      g_emulator->StepCPU();
+    // Step emulator if running
+    if (g_emulator_instance && g_emulator_instance->IsRunning()) {
+      g_emulator_instance->Step();
     }
 
     // Render ImGui
     ImGui::Render();
+
+    // Render frame
     layra_vulkan_render_frame(&vk, ImGui_RenderCallback);
 
-    // Cap frame rate
+    // Cap framerate
     SDL_Delay(16); // ~60 FPS
   }
 
-  // ========================================================================
   // Cleanup
-  // ========================================================================
-  printf("Shutting down...\n");
-
-  // Shutdown PS4 subsystems
-  orbis::kernel_shutdown(nullptr);
-
-  // Wait for GPU to finish
+  printf("\n[Main] Shutting down...\n");
   vkDeviceWaitIdle(vk.device);
 
-  // Cleanup ImGui
+  printf("[Main] Cleaning up ImGui...\n");
   ImGui_ImplVulkan_Shutdown();
   ImGui_ImplSDL3_Shutdown();
   ImGui::DestroyContext();
 
-  // Cleanup Vulkan resources
+  printf("[Main] Cleaning up Vulkan...\n");
   vkDestroyDescriptorPool(vk.device, gDescriptorPool, nullptr);
   layra_vulkan_cleanup(&vk);
 
-  // Cleanup emulator instances (order matters)
-  g_emulator.reset();
-  g_orbis_system.reset();
+  printf("[Main] Shutting down emulator...\n");
+  g_emulator_instance.reset();
 
-  // Cleanup SDL
+  printf("[Main] Cleaning up SDL...\n");
   SDL_DestroyWindow(window);
   SDL_Quit();
 
-  printf("Shutdown complete. Goodbye!\n");
+  printf("\n[Main] Shutdown complete\n");
+  printf("========================================\n");
   return 0;
 }
