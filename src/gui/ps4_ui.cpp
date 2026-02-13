@@ -1,5 +1,4 @@
 // ps4_ui.cpp - Authentic PS4 Dashboard UI
-// Place this in: src/gui/ps4_ui.cpp
 // SPDX-FileCopyrightText: Copyright 2025 LayraPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
