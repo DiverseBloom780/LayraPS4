@@ -21,16 +21,25 @@ set(SDL3_DLL_PATH ${SDL3_ROOT}/x64/SDL3.dll)
 # Vulkan
 find_package(Vulkan REQUIRED)
 
-# Sources (GLOB kept for convenience)
+# Sources (GLOB kept for convenience, but critical files added explicitly)
 file(GLOB CORE_SOURCES
     ${LAYRA_ROOT}/src/core/pkg/*.cpp
     ${LAYRA_ROOT}/src/core/memory/*.cpp
     ${LAYRA_ROOT}/src/core/services/*.cpp
     ${LAYRA_ROOT}/src/core/loader/*.cpp
     ${LAYRA_ROOT}/src/core/kernel/*.cpp
-    ${LAYRA_ROOT}/src/core/kernel/module_manager.cpp
     ${LAYRA_ROOT}/src/core/*.cpp
 )
+
+# Explicitly add critical files (in case GLOB misses them or cache is stale)
+list(APPEND CORE_SOURCES
+    ${LAYRA_ROOT}/src/core/loader/elf_loader.cpp
+    ${LAYRA_ROOT}/src/core/kernel/module_manager.cpp
+    ${LAYRA_ROOT}/src/emulator.cpp
+)
+
+# Remove duplicates
+list(REMOVE_DUPLICATES CORE_SOURCES)
 
 file(GLOB APP_SOURCES
     ${LAYRA_ROOT}/src/*.cpp
@@ -57,6 +66,12 @@ set(IMGUI_SOURCES
 set(BOOT_SOURCES
     ${LAYRA_ROOT}/src/boot/boot_screen.cpp
 )
+
+# Debug: Print what files are being compiled
+message(STATUS "=== Core Sources ===")
+foreach(src ${CORE_SOURCES})
+    message(STATUS "  ${src}")
+endforeach()
 
 # Create an imported SDL3 target if the shipped lib exists
 if(EXISTS "${SDL3_LIB_PATH}" AND EXISTS "${SDL3_INCLUDE_DIR}")
@@ -145,3 +160,15 @@ if(WIN32)
         )
     endif()
 endif()
+
+# Print configuration summary
+message(STATUS "")
+message(STATUS "=== LayraPS4 Build Configuration ===")
+message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "C Compiler: ${CMAKE_C_COMPILER}")
+message(STATUS "C++ Compiler: ${CMAKE_CXX_COMPILER}")
+message(STATUS "Vulkan Found: ${Vulkan_FOUND}")
+message(STATUS "SDL3 Library: ${SDL3_LIB_PATH}")
+message(STATUS "Total Core Sources: ${CMAKE_MATCH_COUNT}")
+message(STATUS "=====================================")
+message(STATUS "")
