@@ -8,6 +8,7 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 #include <string>
 #include <vector>
 
