@@ -1,0 +1,16 @@
+G:\MyProjects\LayraPS4_modified\src\core\kernel\kernel_manager.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\kernel_manager.obj
+G:\MyProjects\LayraPS4_modified\src\core\kernel\kernel_memory.c;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\kernel_memory.obj
+G:\MyProjects\LayraPS4_modified\src\core\kernel\module_manager.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\module_manager.obj
+G:\MyProjects\LayraPS4_modified\src\core\kernel\syscalls.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\syscalls.obj
+G:\MyProjects\LayraPS4_modified\src\core\loader\elf_loader.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\elf_loader.obj
+G:\MyProjects\LayraPS4_modified\src\core\memory\address_space.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\address_space.obj
+G:\MyProjects\LayraPS4_modified\src\core\memory\memory_manager.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\memory_manager.obj
+G:\MyProjects\LayraPS4_modified\src\core\memory\memory_manager_bridge.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\memory_manager_bridge.obj
+G:\MyProjects\LayraPS4_modified\src\core\orbis_system.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\orbis_system.obj
+G:\MyProjects\LayraPS4_modified\src\core\pkg\layra_pkg.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\layra_pkg.obj
+G:\MyProjects\LayraPS4_modified\src\core\services\audio_service.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\audio_service.obj
+G:\MyProjects\LayraPS4_modified\src\core\services\pad_service.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\pad_service.obj
+G:\MyProjects\LayraPS4_modified\src\core\services\service_manager.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\service_manager.obj
+G:\MyProjects\LayraPS4_modified\src\core\libraries\kernel\libkernel.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\libkernel.obj
+G:\MyProjects\LayraPS4_modified\src\core\libraries\libc\libc.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\libc.obj
+G:\MyProjects\LayraPS4_modified\src\emulator.cpp;G:\MyProjects\LayraPS4_modified\build\layra_core.dir\Release\emulator.obj

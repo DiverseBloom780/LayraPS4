@@ -1,0 +1,14 @@
+G:\MyProjects\LayraPS4_modified\src\main.cpp;G:\MyProjects\LayraPS4_modified\build\LayraPS4.dir\Release\main.obj
+G:\MyProjects\LayraPS4_modified\src\emulator.cpp;G:\MyProjects\LayraPS4_modified\build\LayraPS4.dir\Release\emulator.obj
+G:\MyProjects\LayraPS4_modified\src\gui\gui_debugger.cpp;G:\MyProjects\LayraPS4_modified\build\LayraPS4.dir\Release\gui_debugger.obj
+G:\MyProjects\LayraPS4_modified\src\gui\ps4_ui.cpp;G:\MyProjects\LayraPS4_modified\build\LayraPS4.dir\Release\ps4_ui.obj
+G:\MyProjects\LayraPS4_modified\src\sdl_window.cpp;G:\MyProjects\LayraPS4_modified\build\LayraPS4.dir\Release\sdl_window.obj
+G:\MyProjects\LayraPS4_modified\src\video\layra_vulkan.cpp;G:\MyProjects\LayraPS4_modified\build\LayraPS4.dir\Release\layra_vulkan.obj
+G:\MyProjects\LayraPS4_modified\lib\imgui\imgui.cpp;G:\MyProjects\LayraPS4_modified\build\LayraPS4.dir\Release\imgui.obj
+G:\MyProjects\LayraPS4_modified\lib\imgui\imgui_draw.cpp;G:\MyProjects\LayraPS4_modified\build\LayraPS4.dir\Release\imgui_draw.obj
+G:\MyProjects\LayraPS4_modified\lib\imgui\imgui_widgets.cpp;G:\MyProjects\LayraPS4_modified\build\LayraPS4.dir\Release\imgui_widgets.obj
+G:\MyProjects\LayraPS4_modified\lib\imgui\imgui_tables.cpp;G:\MyProjects\LayraPS4_modified\build\LayraPS4.dir\Release\imgui_tables.obj
+G:\MyProjects\LayraPS4_modified\lib\imgui\imgui_demo.cpp;G:\MyProjects\LayraPS4_modified\build\LayraPS4.dir\Release\imgui_demo.obj
+G:\MyProjects\LayraPS4_modified\lib\imgui\backends\imgui_impl_sdl3.cpp;G:\MyProjects\LayraPS4_modified\build\LayraPS4.dir\Release\imgui_impl_sdl3.obj
+G:\MyProjects\LayraPS4_modified\lib\imgui\backends\imgui_impl_vulkan.cpp;G:\MyProjects\LayraPS4_modified\build\LayraPS4.dir\Release\imgui_impl_vulkan.obj
+G:\MyProjects\LayraPS4_modified\src\boot\boot_screen.cpp;G:\MyProjects\LayraPS4_modified\build\LayraPS4.dir\Release\boot_screen.obj

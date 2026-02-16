@@ -24,17 +24,32 @@ find_package(Vulkan REQUIRED)
 # Sources (GLOB kept for convenience, but critical files added explicitly)
 file(GLOB CORE_SOURCES
     ${LAYRA_ROOT}/src/core/pkg/*.cpp
+    ${LAYRA_ROOT}/src/core/pkg/*.c
     ${LAYRA_ROOT}/src/core/memory/*.cpp
+    ${LAYRA_ROOT}/src/core/memory/*.c
     ${LAYRA_ROOT}/src/core/services/*.cpp
+    ${LAYRA_ROOT}/src/core/services/*.c
     ${LAYRA_ROOT}/src/core/loader/*.cpp
+    ${LAYRA_ROOT}/src/core/loader/*.c
     ${LAYRA_ROOT}/src/core/kernel/*.cpp
+    ${LAYRA_ROOT}/src/core/kernel/*.c
     ${LAYRA_ROOT}/src/core/*.cpp
+    ${LAYRA_ROOT}/src/core/*.c
 )
 
 # Explicitly add critical files (in case GLOB misses them or cache is stale)
 list(APPEND CORE_SOURCES
     ${LAYRA_ROOT}/src/core/loader/elf_loader.cpp
     ${LAYRA_ROOT}/src/core/kernel/module_manager.cpp
+    ${LAYRA_ROOT}/src/core/kernel/kernel_manager.cpp
+    ${LAYRA_ROOT}/src/core/kernel/kernel_memory.c
+    ${LAYRA_ROOT}/src/core/kernel/syscalls.cpp
+    ${LAYRA_ROOT}/src/core/libraries/kernel/libkernel.cpp
+    ${LAYRA_ROOT}/src/core/libraries/libc/libc.cpp
+    ${LAYRA_ROOT}/src/core/memory/memory_manager.cpp
+    ${LAYRA_ROOT}/src/core/memory/memory_manager_bridge.cpp
+    ${LAYRA_ROOT}/src/core/memory/address_space.cpp
+    ${LAYRA_ROOT}/src/core/orbis_system.cpp
     ${LAYRA_ROOT}/src/emulator.cpp
 )
 
@@ -87,11 +102,13 @@ endif()
 # Core library
 add_library(layra_core STATIC ${CORE_SOURCES})
 
+# CRITICAL: Include directories for layra_core
 target_include_directories(layra_core PUBLIC
     ${LAYRA_ROOT}/src
     ${LAYRA_ROOT}/src/gui
     ${LAYRA_ROOT}/include
-    ${LAYRA_ROOT}/lib/imgui
+    ${LAYRA_ROOT}/lib/imgui              # ImGui main directory
+    ${LAYRA_ROOT}/lib/imgui/backends     # ImGui backends
 )
 
 # Link dependencies for layra_core
@@ -100,8 +117,16 @@ if(TARGET Vulkan::Vulkan)
 endif()
 
 if(TARGET SDL3::SDL3)
-    # Use PRIVATE unless layra_core headers expose SDL types
     target_link_libraries(layra_core PRIVATE SDL3::SDL3)
+endif()
+
+if(WIN32)
+    target_compile_definitions(layra_core PRIVATE
+        _CRT_SECURE_NO_WARNINGS
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+        _AMD64_
+    )
 endif()
 
 # Main executable
@@ -116,12 +141,14 @@ add_executable(LayraPS4
 list(REMOVE_ITEM APP_SOURCES ${LAYRA_ROOT}/src/main.cpp)
 list(REMOVE_ITEM APP_SOURCES ${LAYRA_ROOT}/src/boot/boot_screen.cpp)
 
+# CRITICAL: Include directories for main executable
 target_include_directories(LayraPS4 PRIVATE
     ${LAYRA_ROOT}/src
     ${LAYRA_ROOT}/src/boot
+    ${LAYRA_ROOT}/src/gui
     ${LAYRA_ROOT}/include
-    ${LAYRA_ROOT}/lib/imgui
-    ${LAYRA_ROOT}/lib/imgui/backends
+    ${LAYRA_ROOT}/lib/imgui              # ImGui main directory
+    ${LAYRA_ROOT}/lib/imgui/backends     # ImGui backends
 )
 
 target_link_libraries(LayraPS4 PRIVATE layra_core)
@@ -169,6 +196,6 @@ message(STATUS "C Compiler: ${CMAKE_C_COMPILER}")
 message(STATUS "C++ Compiler: ${CMAKE_CXX_COMPILER}")
 message(STATUS "Vulkan Found: ${Vulkan_FOUND}")
 message(STATUS "SDL3 Library: ${SDL3_LIB_PATH}")
-message(STATUS "Total Core Sources: ${CMAKE_MATCH_COUNT}")
+message(STATUS "ImGui Directory: ${LAYRA_ROOT}/lib/imgui")
 message(STATUS "=====================================")
 message(STATUS "")

@@ -1,25 +1,22 @@
-// main.cpp - Updated to use authentic PS4 UI
 // SPDX-FileCopyrightText: Copyright 2025 LayraPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+// CRITICAL: imgui.h MUST be included FIRST!
 #define IMGUI_DEFINE_MATH_OPERATORS
-#include "../lib/imgui/backends/imgui_impl_sdl3.h"
-#include "../lib/imgui/backends/imgui_impl_vulkan.h"
-#include "imgui.h"
+#include "../lib/imgui/backends/imgui_impl_sdl3.h"   // ← Now this works
+#include "../lib/imgui/backends/imgui_impl_vulkan.h" // ← Now this works
+#include "../lib/imgui/imgui.h"                      // ← FIRST!
+
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
+#include <vulkan/vulkan.h>
 
-#include <algorithm>
+#include <cmath>
 #include <cstdio>
-#include <cstring>
 #include <memory>
-#include <string>
-#include <vector>
 
-#include "core/orbis_system.h"
 #include "emulator.h"
 #include "gui/ps4_ui.h"
-#include "layra_pkg.h"
 #include "layra_vulkan.h"
 
 // Global instance
@@ -57,8 +54,8 @@ void RenderPS4BootSequence(ImGuiIO &io) {
       ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f));
 
   // Pulse effect based on time
-  float time = SDL_GetTicks() / 1000.0f;
-  float alpha = 0.5f + 0.5f * sinf(time * 3.0f);
+  float time = (float)SDL_GetTicks() / 1000.0f;
+  float alpha = 0.5f + 0.5f * std::sin(time * 3.0f);
   ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, alpha));
   ImGui::Text("%s", bootText);
   ImGui::PopStyleColor();
@@ -75,37 +72,43 @@ int main(int argc, char **argv) {
   printf("LayraPS4 - PlayStation 4 OS Emulator\n");
   printf("========================================\n\n");
 
-  // SDL_Init returns 0 on success, non-zero on failure
-  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
-    printf("ERROR: SDL_Init failed: %s\n", SDL_GetError());
+  // SDL3: SDL_Init returns true on success, false on failure
+  printf("[Main] Initializing SDL...\n");
+  if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
+    fprintf(stderr, "ERROR: SDL_Init failed: %s\n", SDL_GetError());
     return -1;
   }
+  printf("[Main] SDL initialized\n");
 
+  printf("[Main] Creating window...\n");
   SDL_Window *window =
       SDL_CreateWindow("LayraPS4", 1920, 1080,
                        SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 
   if (!window) {
-    printf("ERROR: Failed to create window: %s\n", SDL_GetError());
+    fprintf(stderr, "ERROR: Failed to create window: %s\n", SDL_GetError());
     SDL_Quit();
     return -1;
   }
+  printf("[Main] Window created\n");
 
+  printf("[Main] Initializing Vulkan...\n");
   LayraVulkanContext vk{};
   if (!layra_vulkan_init(&vk, window)) {
-    printf("FATAL: Failed to initialize Vulkan\n");
+    fprintf(stderr, "FATAL: Failed to initialize Vulkan\n");
     SDL_DestroyWindow(window);
     SDL_Quit();
     return -1;
   }
+  printf("[Main] Vulkan initialized\n");
 
   // Initialize Emulator
   printf("\n[Main] Creating emulator instance...\n");
-  g_emulator_instance = std::make_unique<Core::Emulator>();
+  g_emulator_instance.reset(new Core::Emulator());
 
   printf("[Main] Initializing emulator...\n");
   if (!g_emulator_instance->Initialize()) {
-    printf("FATAL: Failed to initialize emulator\n");
+    fprintf(stderr, "FATAL: Failed to initialize emulator\n");
     layra_vulkan_cleanup(&vk);
     SDL_DestroyWindow(window);
     SDL_Quit();
@@ -113,13 +116,26 @@ int main(int argc, char **argv) {
   }
   printf("[Main] Emulator initialized successfully\n\n");
 
+  if (argc > 1) {
+    std::string path = argv[1];
+    printf("[Main] Loading executable: %s\n", path.c_str());
+    if (g_emulator_instance->LoadExecutable(path)) {
+      printf("[Main] Executable loaded successfully\n");
+    } else {
+      fprintf(stderr, "[Main] Failed to load executable: %s\n", path.c_str());
+    }
+  }
+
   // Initialize ImGui
+  printf("[Main] Initializing ImGui...\n");
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImGuiIO &io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   ImGui::StyleColorsDark();
+  printf("[Main] ImGui context created\n");
 
+  printf("[Main] Creating descriptor pool...\n");
   VkDescriptorPoolSize poolSizes[] = {
       {VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
       {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
@@ -128,44 +144,53 @@ int main(int argc, char **argv) {
       {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
       {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000}};
 
-  VkDescriptorPoolCreateInfo poolInfo{
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-      .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-      .maxSets = 1000,
-      .poolSizeCount = static_cast<uint32_t>(IM_ARRAYSIZE(poolSizes)),
-      .pPoolSizes = poolSizes};
+  VkDescriptorPoolCreateInfo poolInfo{};
+  poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+  poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+  poolInfo.maxSets = 1000;
+  poolInfo.poolSizeCount = static_cast<uint32_t>(IM_ARRAYSIZE(poolSizes));
+  poolInfo.pPoolSizes = poolSizes;
 
   if (vkCreateDescriptorPool(vk.device, &poolInfo, nullptr, &gDescriptorPool) !=
       VK_SUCCESS) {
-    printf("FATAL: Failed to create descriptor pool\n");
+    fprintf(stderr, "FATAL: Failed to create descriptor pool\n");
+    ImGui::DestroyContext();
     g_emulator_instance.reset();
     layra_vulkan_cleanup(&vk);
     SDL_DestroyWindow(window);
     SDL_Quit();
     return -1;
   }
+  printf("[Main] Descriptor pool created\n");
 
+  printf("[Main] Initializing ImGui backends...\n");
   ImGui_ImplSDL3_InitForVulkan(window);
-  ImGui_ImplVulkan_InitInfo initInfo{
-      .ApiVersion = VK_API_VERSION_1_0,
-      .Instance = vk.instance,
-      .PhysicalDevice = vk.physicalDevice,
-      .Device = vk.device,
-      .QueueFamily = vk.graphicsQueueFamilyIndex,
-      .Queue = vk.graphicsQueue,
-      .DescriptorPool = gDescriptorPool,
-      .MinImageCount = 2,
-      .ImageCount = 3,
-      .PipelineInfoMain =
-          {
-              .RenderPass = vk.renderPass,
-              .Subpass = 0,
-              .MSAASamples = VK_SAMPLE_COUNT_1_BIT,
-          },
-  };
+
+  ImGui_ImplVulkan_InitInfo initInfo{};
+  initInfo.ApiVersion = VK_API_VERSION_1_0;
+  initInfo.Instance = vk.instance;
+  initInfo.PhysicalDevice = vk.physicalDevice;
+  initInfo.Device = vk.device;
+  initInfo.QueueFamily = vk.graphicsQueueFamilyIndex;
+  initInfo.Queue = vk.graphicsQueue;
+  initInfo.DescriptorPool = gDescriptorPool;
+  initInfo.MinImageCount = 2;
+  initInfo.ImageCount = 3;
+  initInfo.PipelineCache = VK_NULL_HANDLE;
+  initInfo.UseDynamicRendering = false;
+  initInfo.Allocator = nullptr;
+  initInfo.CheckVkResultFn = nullptr;
+  initInfo.MinAllocationSize = 1024 * 1024;
+  // Pipeline info (RenderPass, MSAASamples) moved to PipelineInfoMain in
+  // current ImGui
+  initInfo.PipelineInfoMain.RenderPass = vk.renderPass;
+  initInfo.PipelineInfoMain.Subpass = 0;
+  initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 
   if (!ImGui_ImplVulkan_Init(&initInfo)) {
-    printf("FATAL: Failed to initialize ImGui Vulkan backend\n");
+    fprintf(stderr, "FATAL: Failed to initialize ImGui Vulkan backend\n");
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
     vkDestroyDescriptorPool(vk.device, gDescriptorPool, nullptr);
     g_emulator_instance.reset();
     layra_vulkan_cleanup(&vk);
@@ -173,6 +198,7 @@ int main(int argc, char **argv) {
     SDL_Quit();
     return -1;
   }
+  printf("[Main] ImGui backends initialized\n");
 
   // Initialize PS4 UI
   printf("[Main] Initializing PS4 UI...\n");
@@ -180,6 +206,7 @@ int main(int argc, char **argv) {
   printf("[Main] PS4 UI initialized\n\n");
 
   printf("[Main] Entering main loop...\n\n");
+  printf("========================================\n\n");
 
   bool done = false;
   Uint64 bootStart = SDL_GetTicks();
@@ -215,10 +242,10 @@ int main(int argc, char **argv) {
         printf("[Main] Boot complete, showing PS4 UI\n");
         boot_complete = true;
       }
-      
+
       // Handle PS4 UI input
       Gui::PS4UI::HandleInput();
-      
+
       // Render PS4 UI
       Gui::PS4UI::Render();
     }
@@ -239,7 +266,8 @@ int main(int argc, char **argv) {
   }
 
   // Cleanup
-  printf("\n[Main] Shutting down...\n");
+  printf("\n========================================\n");
+  printf("[Main] Shutting down...\n");
   vkDeviceWaitIdle(vk.device);
 
   printf("[Main] Cleaning up ImGui...\n");

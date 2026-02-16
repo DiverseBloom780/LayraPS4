@@ -1,0 +1,39 @@
+-- Selecting Windows SDK version 10.0.26100.0 to target Windows 10.0.26200.
+-- The C compiler identification is MSVC 19.50.35724.0
+-- The CXX compiler identification is MSVC 19.50.35724.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/cl.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Found Vulkan: C:/VulkanSDK/1.4.341.1/Lib/vulkan-1.lib (found version "1.4.341") found components: glslc glslangValidator
+-- === Core Sources ===
+--   G:/MyProjects/LayraPS4_modified/src/core/kernel/kernel_manager.cpp
+--   G:/MyProjects/LayraPS4_modified/src/core/kernel/kernel_memory.c
+--   G:/MyProjects/LayraPS4_modified/src/core/kernel/module_manager.cpp
+--   G:/MyProjects/LayraPS4_modified/src/core/loader/elf_loader.cpp
+--   G:/MyProjects/LayraPS4_modified/src/core/memory/memory_manager.cpp
+--   G:/MyProjects/LayraPS4_modified/src/core/orbis_system.cpp
+--   G:/MyProjects/LayraPS4_modified/src/core/pkg/layra_pkg.cpp
+--   G:/MyProjects/LayraPS4_modified/src/core/services/audio_service.cpp
+--   G:/MyProjects/LayraPS4_modified/src/core/services/pad_service.cpp
+--   G:/MyProjects/LayraPS4_modified/src/core/services/service_manager.cpp
+--   G:/MyProjects/LayraPS4_modified/src/emulator.cpp
+-- 
+-- === LayraPS4 Build Configuration ===
+-- Build Type: 
+-- C Compiler: C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/cl.exe
+-- C++ Compiler: C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/cl.exe
+-- Vulkan Found: TRUE
+-- SDL3 Library: G:/MyProjects/LayraPS4_modified/lib/SDL3/x64/SDL3.lib
+-- ImGui Directory: G:/MyProjects/LayraPS4_modified/lib/imgui
+-- =====================================
+-- 
+-- Configuring done (2.8s)
+-- Generating done (0.0s)
+-- Build files have been written to: G:/MyProjects/LayraPS4_modified/build

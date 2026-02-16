@@ -1,0 +1,1 @@
+node "G:\openclaw-windows-core\agent.js" "open vscode and continue a cpp project"

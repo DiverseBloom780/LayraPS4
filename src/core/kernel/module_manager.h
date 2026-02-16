@@ -3,28 +3,23 @@
 
 #pragma once
 
-#include "common/types.h"
+#include "core/loader/symbols.h"
+#include <cstdint>
 #include <map>
-#include <mutex>
 #include <string>
 #include <vector>
 
-namespace Core {
-namespace Kernel {
+namespace Core::Kernel {
 
 struct SymbolInfo {
-  std::string name;
-  u64 address;
-  u32 nid; // PS4 Name ID (hash of the name)
+  uint64_t address;
 };
 
 struct ModuleInfo {
-  s32 handle;
+  uint32_t handle;
   std::string name;
-  u64 baseAddress;
-  u64 size;
+  uint64_t baseAddress;
   std::map<std::string, SymbolInfo> exports;
-  std::vector<std::string> dependencies;
 };
 
 class ModuleManager {
@@ -32,32 +27,26 @@ public:
   ModuleManager();
   ~ModuleManager();
 
-  // Register a module after it's been loaded into memory
-  s32 RegisterModule(const std::string &name, u64 base, u64 size);
+  std::vector<ModuleInfo> GetLoadedModules() const;
+  uintptr_t ResolveSymbol(const std::string &module, const std::string &symbol);
 
-  // Unregister a module
-  void UnregisterModule(s32 handle);
+  // Registers a loaded module
+  uint32_t RegisterModule(const std::string &name, uint64_t baseAddress,
+                          uint64_t size, uint64_t entryPoint);
 
-  // Add an export to a module
-  void AddExport(s32 handle, const std::string &name, u64 address, u32 nid = 0);
+  // Registers an HLE module function
+  void RegisterHLEExport(const std::string &moduleName, const std::string &nid,
+                         const std::string &name, uint64_t hostAddress);
 
-  // Resolve a symbol address across all loaded modules
-  u64 ResolveSymbol(const std::string &moduleName,
-                    const std::string &symbolName);
-  u64 ResolveSymbolByNid(const std::string &moduleName, u32 nid);
-
-  // Get module information
-  std::vector<ModuleInfo> GetLoadedModules();
-  ModuleInfo *GetModule(s32 handle);
-  ModuleInfo *GetModuleByName(const std::string &name);
+  // Resolves an HLE symbol by NID
+  uint64_t ResolveHLEExport(const std::string &moduleName,
+                            const std::string &nid);
 
 private:
-  std::map<s32, ModuleInfo> modules;
-  std::mutex mutex;
-  s32 nextHandle = 0x2000;
-
-  s32 AllocateHandle();
+  struct ModulePrivate;
+  std::vector<ModuleInfo> loaded_modules;
+  // Map of Module Name -> List of HLE Exports
+  std::map<std::string, std::vector<Core::Loader::HLEExport>> hle_modules;
 };
 
-} // namespace Kernel
-} // namespace Core
+} // namespace Core::Kernel

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Solution>
+	<Configurations>
+		<BuildType Name="Debug"/>
+		<BuildType Name="Release"/>
+		<BuildType Name="MinSizeRel"/>
+		<BuildType Name="RelWithDebInfo"/>
+		<Platform Name="x64"/>
+	</Configurations>
+	<Project Path="ALL_BUILD.vcxproj" Id="b21409af-1288-35c0-b663-e5ba54828347">
+		<BuildDependency Project="LayraPS4.vcxproj"/>
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="layra_core.vcxproj"/>
+		<Build Solution="Debug|*" Project="false"/>
+		<Build Solution="Release|*" Project="false"/>
+		<Build Solution="MinSizeRel|*" Project="false"/>
+		<Build Solution="RelWithDebInfo|*" Project="false"/>
+	</Project>
+	<Project Path="LayraPS4.vcxproj" Id="d506be96-3aa3-37d8-867b-8fdde562a670">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+		<BuildDependency Project="layra_core.vcxproj"/>
+	</Project>
+	<Project Path="ZERO_CHECK.vcxproj" Id="d6a725d5-0d37-3547-9056-3838432f4efb"/>
+	<Project Path="layra_core.vcxproj" Id="5d888a8c-b627-3bfc-8c6e-bf1124d90707">
+		<BuildDependency Project="ZERO_CHECK.vcxproj"/>
+	</Project>
+</Solution>

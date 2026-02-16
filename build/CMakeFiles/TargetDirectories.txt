@@ -1,0 +1,4 @@
+G:/MyProjects/LayraPS4_modified/build/CMakeFiles/layra_core.dir
+G:/MyProjects/LayraPS4_modified/build/CMakeFiles/LayraPS4.dir
+G:/MyProjects/LayraPS4_modified/build/CMakeFiles/ALL_BUILD.dir
+G:/MyProjects/LayraPS4_modified/build/CMakeFiles/ZERO_CHECK.dir

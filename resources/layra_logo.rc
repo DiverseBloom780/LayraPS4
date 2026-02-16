@@ -1,5 +1,6 @@
-// Windows Resource File for LayraPS4
 // Professional application resources for Windows executable
+#include <winres.h>
+
 // Application icon - primary executable icon
 IDI_ICON1 ICON "layra_logo.ico"
 

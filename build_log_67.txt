@@ -1,0 +1,5 @@
+MSBuild version 18.0.5+e22287bf1 for .NET Framework
+
+  layra_core.vcxproj -> G:\LayraPS4_modified\build\Release\layra_core.lib
+  main.cpp
+  LayraPS4.vcxproj -> G:\LayraPS4_modified\build\Release\LayraPS4.exe

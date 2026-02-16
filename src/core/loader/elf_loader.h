@@ -58,7 +58,15 @@ public:
             Kernel::ModuleManager *moduleManager);
   ~ElfLoader();
 
-  bool Load(const std::string &path);
+  struct LoadResult {
+    bool success = false;
+    uint64_t entry_point = 0;
+    uint64_t load_base = 0;
+    uint64_t image_size = 0;
+    std::string error_msg;
+  };
+
+  LoadResult Load(const std::string &path);
 
 private:
   Memory::MemoryManager *memory;
@@ -118,10 +126,11 @@ private:
   bool ParseHeaders(const std::vector<uint8_t> &data, Elf64_Ehdr &ehdr,
                     std::vector<Elf64_Phdr> &phdrs);
   bool MapSegments(const std::vector<uint8_t> &data,
-                   const std::vector<Elf64_Phdr> &phdrs);
+                   const std::vector<Elf64_Phdr> &phdrs, uint64_t load_base);
   bool ApplyRelocations(const std::vector<uint8_t> &data,
                         const Elf64_Ehdr &ehdr,
-                        const std::vector<Elf64_Phdr> &phdrs);
+                        const std::vector<Elf64_Phdr> &phdrs,
+                        uint64_t load_base);
   bool HandleImports(const std::vector<uint8_t> &data, const Elf64_Ehdr &ehdr,
                      const std::vector<Elf64_Phdr> &phdrs);
 };

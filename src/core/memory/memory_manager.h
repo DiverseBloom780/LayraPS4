@@ -3,21 +3,45 @@
 
 #pragma once
 
-#include "common/types.h"
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <mutex>
+#include <string>
 #include <vector>
+
+#include "address_space.h"
 
 namespace Core {
 namespace Memory {
 
-struct MemoryRegion {
-  uint64_t vaddr;
-  uint64_t size;
-  uint32_t prot; // Protection flags (read/write/exec)
+// Address types (matching kernel_memory.h)
+using VAddr = uint64_t;
+using PAddr = uint64_t;
+
+// Virtual Memory Area tracking
+struct VirtualMemoryArea {
+  VAddr base = 0;
+  uint64_t size = 0;
+  int32_t type = 0; // VMAType
+  int32_t prot = 0; // Protection flags
   std::string name;
-  std::vector<uint8_t> data;
+  int64_t phys_addr = -1; // Backing physical address (-1 = none)
+};
+
+// Physical Memory Area tracking
+struct PhysicalMemoryArea {
+  PAddr base = 0;
+  uint64_t size = 0;
+  int32_t memory_type = 0;
+  bool allocated = false;
+};
+
+// PRT Aperture
+struct PrtArea {
+  VAddr start = 0;
+  uint64_t size = 0;
+  bool mapped = false;
 };
 
 class MemoryManager {
@@ -25,29 +49,100 @@ public:
   MemoryManager();
   ~MemoryManager();
 
-  // Map a region of memory
-  uint64_t Map(uint64_t vaddr, uint64_t size, uint32_t prot,
-               const std::string &name);
+  // --- Simple read/write (used by gui_debugger) ---
+  void Read(uint64_t vaddr, void *dest, size_t size);
+  void Write(uint64_t vaddr, const void *src, size_t size);
+  void Map(uint64_t vaddr, uint64_t size, uint32_t flags, const char *name);
 
-  // Unmap a region
-  void Unmap(uint64_t vaddr, uint64_t size);
+  // --- PS4 Memory Management API (called by kernel_memory bridge) ---
 
-  // Protect a region
-  void Protect(uint64_t vaddr, uint64_t size, uint32_t prot);
+  // Direct memory
+  uint64_t GetTotalDirectSize() const { return TOTAL_DIRECT_SIZE; }
+  PAddr Allocate(int64_t searchStart, int64_t searchEnd, uint64_t len,
+                 uint64_t alignment, int32_t memoryType);
+  int32_t Free(uint64_t start, uint64_t len, bool checked);
+  int32_t DirectQueryAvailable(uint64_t searchStart, uint64_t searchEnd,
+                               uint64_t alignment, PAddr *physAddr,
+                               uint64_t *size);
 
-  // Read/Write helpers (stubs for physical backing)
-  void Read(uint64_t vaddr, void *data, uint64_t size);
-  void Write(uint64_t vaddr, const void *data, uint64_t size);
+  int32_t DirectMemoryQuery(uint64_t offset, bool extended, void *info);
+  int32_t GetDirectMemoryType(uint64_t addr, int32_t *typeOut, void **startOut,
+                              void **endOut);
+  void SetDirectMemoryType(VAddr addr, uint64_t len, int32_t type);
 
-  // Get the list of mapped regions
-  const std::map<uint64_t, MemoryRegion> &GetRegions() const { return regions; }
+  // Virtual memory
+  int32_t VirtualQuery(VAddr addr, int32_t flags, void *info);
+  int32_t MapMemory(void **addr, VAddr in_addr, uint64_t len, int32_t prot,
+                    int32_t flags, int32_t vma_type, const char *name,
+                    bool should_check, int64_t phys_addr, uint64_t alignment);
+  int32_t UnmapMemory(VAddr addr, uint64_t len);
+  int32_t QueryProtection(VAddr addr, void **start, void **end, uint32_t *prot);
+  int32_t Protect(VAddr addr, uint64_t size, int32_t prot);
+
+  int32_t IsStack(VAddr addr, void **start, void **end);
+  void NameVirtualRange(VAddr addr, uint64_t len, const char *name);
+
+  // Flexible memory
+  uint64_t GetTotalFlexibleSize() const { return TOTAL_FLEXIBLE_SIZE; }
+  uint64_t GetAvailableFlexibleSize() const;
+
+  // Memory pool
+  PAddr PoolExpand(uint64_t searchStart, uint64_t searchEnd, uint64_t len,
+                   uint64_t alignment);
+  int32_t PoolCommit(VAddr addr, uint64_t len, int32_t prot, int32_t type);
+  int32_t PoolDecommit(VAddr addr, uint64_t len);
+  void GetMemoryPoolStats(void *stats);
+
+  // File mapping
+  int32_t MapFile(void **addr, VAddr in_addr, uint64_t len, int32_t prot,
+                  int32_t flags, int32_t fd, int64_t offset);
+
+  // PRT
+  void SetPrtArea(int32_t id, VAddr address, uint64_t size);
+
+  // Singleton access
+  static MemoryManager *Instance();
+
+  // Bridge helper
+  static MemoryManager *GetInstance() { return Instance(); }
+
+  // Core functionality
+  bool Initialize();
+
+  // Address Space Access
+  AddressSpace &GetAddressSpace() { return *address_space_; }
 
 private:
-  std::map<uint64_t, MemoryRegion> regions;
-  std::mutex mutex;
+  static constexpr uint64_t TOTAL_DIRECT_SIZE = 0x160000000ULL;  // 5.5 GB
+  static constexpr uint64_t TOTAL_FLEXIBLE_SIZE = 0x1DC00000ULL; // 448 MB
+  static constexpr int MAX_PRT_AREAS = 3;
 
-  // Find a free gap in memory for anonymous mapping
-  uint64_t FindGap(uint64_t size);
+  std::mutex mutex_;
+  std::unique_ptr<AddressSpace> address_space_; // Backing implementation
+
+  // Tracking structures
+  std::map<VAddr, VirtualMemoryArea> vma_map_;
+  std::map<PAddr, PhysicalMemoryArea> phys_map_;
+  PrtArea prt_areas_[MAX_PRT_AREAS] = {};
+
+  uint64_t next_phys_addr_ = 0;
+  uint64_t flexible_used_ = 0;
+  uint64_t pool_used_ = 0;
+
+  // Global singleton
+  static MemoryManager *s_instance_;
+
+  // Helpers
+  VAddr FindFreeVirtualRange(uint64_t size, uint64_t alignment);
+
+  // Translation helper
+  inline void *GetHostPtr(VAddr guest_addr) {
+    if (!base_addr_)
+      return nullptr;
+    return static_cast<void *>(base_addr_ + guest_addr);
+  }
+
+  uint8_t *base_addr_ = nullptr; // Base address of the reserved user space
 };
 
 } // namespace Memory

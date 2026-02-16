@@ -27,49 +27,85 @@ ElfLoader::ElfLoader(Memory::MemoryManager *memoryManager,
 
 ElfLoader::~ElfLoader() { printf("[ElfLoader] Destructor called\n"); }
 
-bool ElfLoader::Load(const std::string &path) {
+ElfLoader::LoadResult ElfLoader::Load(const std::string &path) {
   std::ifstream file(path, std::ios::binary | std::ios::ate);
   if (!file.is_open()) {
-    std::cerr << "[Loader] Failed to open ELF file: " << path << "\n";
-    return false;
+    return {false, 0, 0, 0, "Failed to open ELF file: " + path};
   }
 
   std::streamsize size = file.tellg();
   file.seekg(0, std::ios::beg);
 
   if (size <= 0) {
-    std::cerr << "[Loader] ELF file empty or error reading size: " << path
-              << "\n";
-    return false;
+    return {false, 0, 0, 0, "ELF file empty or error reading size: " + path};
   }
 
   std::vector<uint8_t> data(static_cast<size_t>(size));
   if (!file.read(reinterpret_cast<char *>(data.data()), size)) {
-    std::cerr << "[Loader] Failed to read ELF data.\n";
-    return false;
+    return {false, 0, 0, 0, "Failed to read ELF file"};
   }
 
   Elf64_Ehdr ehdr;
   std::vector<Elf64_Phdr> phdrs;
 
   if (!ParseHeaders(data, ehdr, phdrs)) {
-    std::cerr << "[Loader] ParseHeaders failed\n";
-    return false;
+    return {false, 0, 0, 0, "Failed to parse ELF headers"};
   }
 
-  if (!MapSegments(data, phdrs)) {
-    std::cerr << "[Loader] MapSegments failed\n";
-    return false;
+  // Calculate load base for relocatable ELFs (ET_DYN)
+  uint64_t load_base = 0;
+  if (ehdr.e_type == 3) { // ET_DYN
+    // Determine the total size needed for the image
+    // Find min and max vaddr
+    uint64_t min_vaddr = UINT64_MAX;
+    uint64_t max_vaddr = 0;
+
+    for (const auto &phdr : phdrs) {
+      if (phdr.p_type == PT_LOAD) {
+        if (phdr.p_vaddr < min_vaddr)
+          min_vaddr = phdr.p_vaddr;
+        if (phdr.p_vaddr + phdr.p_memsz > max_vaddr)
+          max_vaddr = phdr.p_vaddr + phdr.p_memsz;
+      }
+    }
+
+    // uint64_t image_size = max_vaddr - min_vaddr; // This is calculated later
+
+    // Find a free region for this image
+    // For now, simpler: Use a fixed base for the main executable if possible,
+    // or allocate via MemoryManager Just hardcoding 0x400000 for main
+    // executable if it's relocatable is a good PS4 convention
+    load_base = 0x400000;
+    printf("[Loader] Detected ET_DYN. Using load base: 0x%llx\n", load_base);
+  } else {
+    printf("[Loader] Detected ET_EXEC. Using absolute addresses (base 0)\n");
   }
 
-  // Apply relocations and imports if present; failures are logged inside
-  ApplyRelocations(data, ehdr, phdrs);
+  if (!MapSegments(data, phdrs, load_base)) {
+    return {false, 0, 0, 0, "Failed to map segments"};
+  }
+
+  if (!ApplyRelocations(data, ehdr, phdrs, load_base)) {
+    return {false, 0, 0, 0, "Failed to apply relocations"};
+  }
   HandleImports(data, ehdr, phdrs);
 
-  std::cout << "[Loader] ELF loaded successfully. Entry point: 0x" << std::hex
-            << ehdr.e_entry << std::dec << "\n";
+  // Calculate total size
+  uint64_t min_vaddr = UINT64_MAX;
+  uint64_t max_vaddr = 0;
 
-  return true;
+  for (const auto &phdr : phdrs) {
+    if (phdr.p_type == PT_LOAD) {
+      if (phdr.p_vaddr < min_vaddr)
+        min_vaddr = phdr.p_vaddr;
+      if (phdr.p_vaddr + phdr.p_memsz > max_vaddr)
+        max_vaddr = phdr.p_vaddr + phdr.p_memsz;
+    }
+  }
+
+  printf("[Loader] ELF loaded successfully. Entry point: 0x%llx\n",
+         load_base + ehdr.e_entry);
+  return {true, load_base + ehdr.e_entry, load_base, max_vaddr - min_vaddr, ""};
 }
 
 bool ElfLoader::ParseHeaders(const std::vector<uint8_t> &data, Elf64_Ehdr &ehdr,
@@ -108,7 +144,8 @@ bool ElfLoader::ParseHeaders(const std::vector<uint8_t> &data, Elf64_Ehdr &ehdr,
 }
 
 bool ElfLoader::MapSegments(const std::vector<uint8_t> &data,
-                            const std::vector<Elf64_Phdr> &phdrs) {
+                            const std::vector<Elf64_Phdr> &phdrs,
+                            uint64_t load_base) {
   if (!memory) {
     std::cerr << "[Loader] MapSegments called but MemoryManager is not set.\n";
     return false;
@@ -117,17 +154,20 @@ bool ElfLoader::MapSegments(const std::vector<uint8_t> &data,
   for (const auto &phdr : phdrs) {
     if (phdr.p_type == PT_LOAD || phdr.p_type == PT_SCE_RELRO ||
         phdr.p_type == PT_SCE_DYNLIBDATA) {
+
+      uint64_t vaddr = load_base + phdr.p_vaddr;
+
       std::cout << "[Loader] Mapping segment: type=0x" << std::hex
-                << phdr.p_type << ", vaddr=0x" << phdr.p_vaddr << ", size=0x"
+                << phdr.p_type << ", vaddr=0x" << vaddr << ", size=0x"
                 << phdr.p_memsz << std::dec << "\n";
 
-      memory->Map(phdr.p_vaddr, phdr.p_memsz, phdr.p_flags, "ELF_SEGMENT");
+      memory->Map(vaddr, phdr.p_memsz, phdr.p_flags, "ELF_SEGMENT");
 
       if (phdr.p_filesz > 0) {
         size_t file_offset = static_cast<size_t>(phdr.p_offset);
         size_t file_size = static_cast<size_t>(phdr.p_filesz);
         if (file_offset + file_size <= data.size()) {
-          memory->Write(phdr.p_vaddr, data.data() + file_offset, file_size);
+          memory->Write(vaddr, data.data() + file_offset, file_size);
         } else {
           std::cerr << "[Loader] Segment file range out of bounds\n";
           return false;
@@ -140,7 +180,8 @@ bool ElfLoader::MapSegments(const std::vector<uint8_t> &data,
 
 bool ElfLoader::ApplyRelocations(const std::vector<uint8_t> &data,
                                  const Elf64_Ehdr & /*ehdr*/,
-                                 const std::vector<Elf64_Phdr> &phdrs) {
+                                 const std::vector<Elf64_Phdr> &phdrs,
+                                 uint64_t load_base) {
   if (!memory) {
     std::cerr
         << "[Loader] ApplyRelocations called but MemoryManager is not set.\n";
@@ -166,7 +207,7 @@ bool ElfLoader::ApplyRelocations(const std::vector<uint8_t> &data,
 
         switch (dyn.d_tag) {
         case 7: // DT_RELA
-          rela_addr = dyn.d_un.d_ptr;
+          rela_addr = dyn.d_un.d_ptr + load_base;
           break;
         case 8: // DT_RELASZ
           rela_size = dyn.d_un.d_val;
@@ -175,23 +216,24 @@ bool ElfLoader::ApplyRelocations(const std::vector<uint8_t> &data,
           rela_ent_size = dyn.d_un.d_val;
           break;
         case 5: // DT_SYMTAB
-          sym_addr = dyn.d_un.d_ptr;
+          sym_addr = dyn.d_un.d_ptr + load_base;
           break;
         case 10: // DT_STRTAB
-          str_addr = dyn.d_un.d_ptr;
+          str_addr = dyn.d_un.d_ptr + load_base;
           break;
         default:
           break;
         }
       }
     } else if (phdr.p_type == PT_SCE_RELA) {
-      rela_addr = phdr.p_vaddr;
+      rela_addr = phdr.p_vaddr + load_base;
       rela_size = phdr.p_memsz;
     }
   }
 
   if (rela_addr == 0 || rela_size == 0) {
-    return false;
+    // Some ELFs don't have relocations, this is fine
+    return true;
   }
 
   std::cout << "[Loader] Applying relocations: addr=0x" << std::hex << rela_addr
@@ -205,13 +247,17 @@ bool ElfLoader::ApplyRelocations(const std::vector<uint8_t> &data,
                  static_cast<size_t>(rela_ent_size));
     std::memcpy(&rela, rela_bytes.data(), sizeof(Elf64_Rela));
 
+    // Relocations apply to VAddr: load_base + r_offset
+    uint64_t target_vaddr = load_base + rela.r_offset;
+
     uint32_t type = static_cast<uint32_t>(rela.r_info & 0xFFFFFFFF);
     uint32_t sym_idx = static_cast<uint32_t>(rela.r_info >> 32);
 
     switch (type) {
     case R_X86_64_RELATIVE: {
-      uint64_t value = static_cast<uint64_t>(rela.r_addend);
-      memory->Write(rela.r_offset, &value, sizeof(value));
+      // B + A
+      uint64_t value = load_base + static_cast<uint64_t>(rela.r_addend);
+      memory->Write(target_vaddr, &value, sizeof(value));
       break;
     }
     case R_X86_64_64:
@@ -225,8 +271,8 @@ bool ElfLoader::ApplyRelocations(const std::vector<uint8_t> &data,
         std::memcpy(&sym, sym_bytes.data(), sizeof(Elf64_Sym));
 
         if (sym.st_value != 0) {
-          uint64_t value = sym.st_value + rela.r_addend;
-          memory->Write(rela.r_offset, &value, sizeof(value));
+          uint64_t value = load_base + sym.st_value + rela.r_addend;
+          memory->Write(target_vaddr, &value, sizeof(value));
         } else if (str_addr != 0) {
           char sym_name[256] = {0};
           memory->Read(str_addr + sym.st_name, sym_name, sizeof(sym_name));
@@ -236,16 +282,14 @@ bool ElfLoader::ApplyRelocations(const std::vector<uint8_t> &data,
                 module_manager->ResolveSymbol("", sym_name));
             if (resolved_addr != 0) {
               uint64_t value = resolved_addr + rela.r_addend;
-              memory->Write(rela.r_offset, &value, sizeof(value));
-              std::cout << "[Loader] Resolved import: " << sym_name << " -> 0x"
-                        << std::hex << resolved_addr << std::dec << "\n";
+              memory->Write(target_vaddr, &value, sizeof(value));
+              // std::cout << "[Loader] Resolved import: " << sym_name << " ->
+              // 0x"
+              //           << std::hex << resolved_addr << std::dec << "\n";
             } else {
-              std::cout << "[Loader] Unresolved import for relocation: "
-                        << sym_name << "\n";
+              // std::cout << "[Loader] Unresolved import for relocation: "
+              //           << sym_name << "\n";
             }
-          } else {
-            std::cout << "[Loader] module_manager not set; cannot resolve: "
-                      << sym_name << "\n";
           }
         }
       }

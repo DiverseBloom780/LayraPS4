@@ -20,6 +20,10 @@ class MemoryManager;
 namespace Services {
 class ServiceManager;
 }
+namespace FileSys {
+class MntPoints;
+class HandleTable;
+} // namespace FileSys
 
 namespace Loader {
 class ElfLoader;
@@ -101,6 +105,10 @@ private:
 
   // ELF Loader
   std::unique_ptr<Loader::ElfLoader> loader;
+
+  // FileSystem
+  std::unique_ptr<FileSys::MntPoints> mnt_points;
+  std::unique_ptr<FileSys::HandleTable> handle_table;
 };
 
 } // namespace Core

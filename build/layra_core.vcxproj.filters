@@ -1,0 +1,61 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\kernel\kernel_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\kernel\kernel_memory.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\kernel\module_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\kernel\syscalls.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\loader\elf_loader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\memory\address_space.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\memory\memory_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\memory\memory_manager_bridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\orbis_system.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\pkg\layra_pkg.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\services\audio_service.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\services\pad_service.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\services\service_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\libraries\kernel\libkernel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\core\libraries\libc\libc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="G:\MyProjects\LayraPS4_modified\src\emulator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="G:\MyProjects\LayraPS4_modified\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{84671913-0B51-31E2-8FED-090F05A615E1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

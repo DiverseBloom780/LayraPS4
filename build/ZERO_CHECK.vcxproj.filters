@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="G:\MyProjects\LayraPS4_modified\build\CMakeFiles\0dc67c813e8bef814ec859258f9adcea\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{BAE1BAF1-060A-30E1-A3A1-D1D8C5E6F8D6}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

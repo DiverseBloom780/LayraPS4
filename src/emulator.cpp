@@ -1,15 +1,22 @@
 // SPDX-FileCopyrightText: Copyright 2025 LayraPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include "emulator.h"
+#include <cmath>
+#include <cstdio>
+#include <iostream>
+
+#include "core/file_sys/fs.h"
 #include "core/kernel/kernel_manager.h"
 #include "core/kernel/module_manager.h"
+#include "core/kernel/syscalls.h"
+#include "core/libraries/kernel/libkernel.h"
+#include "core/libraries/libc/libc.h"
 #include "core/loader/elf_loader.h"
 #include "core/memory/memory_manager.h"
 #include "core/orbis_system.h"
 #include "core/services/service_manager.h"
-#include <cstdio>
-#include <iostream>
+#include "emulator.h"
+
 
 namespace Core {
 
@@ -57,6 +64,10 @@ bool Emulator::Initialize() {
       return false;
     }
 
+    // Register HLE Libraries
+    Core::Libraries::Kernel::RegisterLibKernel(module_manager.get());
+    Core::Libraries::Libc::RegisterLibc(module_manager.get());
+
     // Initialize Service Manager
     printf("[Emulator] Initializing Service Manager...\n");
     services = std::make_unique<Services::ServiceManager>();
@@ -64,6 +75,19 @@ bool Emulator::Initialize() {
       fprintf(stderr, "[Emulator] ERROR: Failed to create Service Manager\n");
       return false;
     }
+
+    // Initialize FileSystem Components
+    printf("[Emulator] Initializing FileSystem...\n");
+    mnt_points = std::make_unique<FileSys::MntPoints>();
+    handle_table = std::make_unique<FileSys::HandleTable>();
+    if (!mnt_points || !handle_table) {
+      fprintf(stderr,
+              "[Emulator] ERROR: Failed to create FileSystem components\n");
+      return false;
+    }
+
+    // Create standard handles (stdin, stdout, stderr)
+    handle_table->CreateStdHandles();
 
     // Initialize Orbis System
     printf("[Emulator] Initializing Orbis System...\n");
@@ -81,15 +105,26 @@ bool Emulator::Initialize() {
       return false;
     }
 
-    state = EmulatorState::Stopped;
-    printf("[Emulator] Initialization complete\n");
-    return true;
+    // Wire up the Orbis System with all subsystem pointers
+    printf("[Emulator] Initializing Orbis System subsystems...\n");
+    if (!system->Initialize(memory.get(), kernel.get(), module_manager.get(),
+                            services.get(), mnt_points.get(),
+                            handle_table.get())) {
+      fprintf(stderr, "[Emulator] ERROR: Failed to initialize Orbis System\n");
+      return false;
+    }
+
+    printf("[OrbisSystem] Orbis OS layer initialized successfully\n");
 
   } catch (const std::exception &e) {
     fprintf(stderr, "[Emulator] ERROR: Exception during initialization: %s\n",
             e.what());
     return false;
   }
+
+  state = EmulatorState::Stopped;
+  printf("[Emulator] Initialization complete\n");
+  return true;
 }
 
 bool Emulator::LoadExecutable(const std::string &path) {
@@ -117,10 +152,30 @@ bool Emulator::LoadExecutable(const std::string &path) {
     // For now, assume it's an ELF
 
     // Use the ELF loader to load the executable
-    // This is where you'd integrate with your existing elf_loader.cpp
-    // The loader should parse the ELF, allocate memory, and set up segments
+    auto result = loader->Load(path);
+    if (!result.success) {
+      fprintf(stderr, "[Emulator] ERROR: ELF Loader failed for %s: %s\n",
+              path.c_str(), result.error_msg.c_str());
+      return false;
+    }
 
-    printf("[Emulator] Executable loaded successfully\n");
+    printf("[Emulator] Executable loaded successfully. Entry: 0x%llx, Base: "
+           "0x%llx\n",
+           result.entry_point, result.load_base);
+
+    // Register module with ModuleManager
+    if (module_manager) {
+      module_manager->RegisterModule(path, result.load_base, result.image_size,
+                                     result.entry_point);
+    }
+
+    // Create initial thread with KernelManager
+    if (kernel) {
+      uint32_t handle =
+          kernel->CreateThread("main", result.entry_point, 100 /* priority */);
+      kernel->StartThread(handle);
+    }
+
     return true;
 
   } catch (const std::exception &e) {

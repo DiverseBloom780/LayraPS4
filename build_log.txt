@@ -1,0 +1,8 @@
+MSBuild version 18.0.5+e22287bf1 for .NET Framework
+
+  libkernel.cpp
+  emulator.cpp
+  Generating Code...
+  layra_core.vcxproj -> G:\MyProjects\LayraPS4_modified\build\Release\layra_core.lib
+  emulator.cpp
+  LayraPS4.vcxproj -> G:\MyProjects\LayraPS4_modified\build\Release\LayraPS4.exe
