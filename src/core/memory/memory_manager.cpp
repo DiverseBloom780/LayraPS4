@@ -34,6 +34,11 @@ MemoryManager::MemoryManager() {
             "[MemoryManager] FATAL: Failed to initialize AddressSpace!\n");
   }
 
+  if (!Initialize()) {
+    fprintf(stderr,
+            "[MemoryManager] FATAL: Failed to initialize MemoryManager base address!\n");
+  }
+
   // Set singleton
   s_instance_ = this;
 }
@@ -97,9 +102,20 @@ void MemoryManager::Write(uint64_t vaddr, const void *src, size_t size) {
   }
 }
 
-void MemoryManager::Map(uint64_t vaddr, uint64_t size, uint32_t flags,
-                        const char *name) {
-  MapMemory(nullptr, vaddr, size, flags, 0, 0, name, false, -1, 0);
+bool MemoryManager::Map(uint64_t vaddr, uint64_t size, uint32_t flags,
+                         const char *name) {
+  int32_t result = MapMemory(nullptr, vaddr, size, flags, 0, 0, name, false,
+                             -1, 0);
+  if (result != 0) {
+    fprintf(stderr,
+            "[MemoryManager] ERROR: Map failed for guest 0x%llx size 0x%llx "
+            "flags 0x%x name=%s result=0x%x\n",
+            static_cast<unsigned long long>(vaddr),
+            static_cast<unsigned long long>(size), flags,
+            name ? name : "<unnamed>", result);
+    return false;
+  }
+  return true;
 }
 
 // --- PS4 Direct Memory ---
