@@ -52,7 +52,7 @@ public:
   // --- Simple read/write (used by gui_debugger) ---
   void Read(uint64_t vaddr, void *dest, size_t size);
   void Write(uint64_t vaddr, const void *src, size_t size);
-  void Map(uint64_t vaddr, uint64_t size, uint32_t flags, const char *name);
+  bool Map(uint64_t vaddr, uint64_t size, uint32_t flags, const char *name);
 
   // --- PS4 Memory Management API (called by kernel_memory bridge) ---
 
@@ -112,6 +112,14 @@ public:
   // Address Space Access
   AddressSpace &GetAddressSpace() { return *address_space_; }
 
+  // Translate guest virtual address to host pointer. Returns nullptr if the
+  // address is invalid or memory has not been initialized.
+  inline void *GetHostPtr(VAddr guest_addr) {
+    if (!base_addr_)
+      return nullptr;
+    return static_cast<void *>(base_addr_ + guest_addr);
+  }
+
 private:
   static constexpr uint64_t TOTAL_DIRECT_SIZE = 0x160000000ULL;  // 5.5 GB
   static constexpr uint64_t TOTAL_FLEXIBLE_SIZE = 0x1DC00000ULL; // 448 MB
@@ -134,13 +142,6 @@ private:
 
   // Helpers
   VAddr FindFreeVirtualRange(uint64_t size, uint64_t alignment);
-
-  // Translation helper
-  inline void *GetHostPtr(VAddr guest_addr) {
-    if (!base_addr_)
-      return nullptr;
-    return static_cast<void *>(base_addr_ + guest_addr);
-  }
 
   uint8_t *base_addr_ = nullptr; // Base address of the reserved user space
 };
