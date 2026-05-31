@@ -1,8 +1,10 @@
 // SPDX-FileCopyrightText: Copyright 2025 LayraPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include "kernel_manager.h"
-#include "syscalls.h"
+#include "kernel.h"
+#include "syscall_handler.h"
+#include "exception_handler.h"
+#include "core/memory/memory_manager.h"
 #include <cstdio>
 #include <map>
 #include <mutex>
@@ -33,18 +35,19 @@ static uint32_t g_next_thread_handle = 0x2000;
 KernelManager::KernelManager() {
   printf("[KernelManager] Initialized\n");
   syscall_handler = new SyscallHandler(this);
+  InstallExceptionHandler(syscall_handler);
 }
 
 KernelManager::~KernelManager() {
   printf("[KernelManager] Shutdown\n");
+  RemoveExceptionHandler();
   if (syscall_handler)
     delete syscall_handler; // Clean up
-  // Join all threads?
   std::lock_guard<std::mutex> lock(g_thread_mutex);
   for (auto &pair : g_threads) {
     ThreadContext *ctx = pair.second;
     if (ctx->native_thread.joinable()) {
-      ctx->native_thread.join(); // Or detach, depending on desired behavior
+      ctx->native_thread.join();
     }
     delete ctx;
   }
@@ -98,10 +101,45 @@ void KernelManager::StartThread(uint32_t handle) {
     printf("[KernelManager] Thread '%s' started execution at 0x%llx\n",
            ctx->info.name.c_str(), ctx->info.entry);
 
-    // TODO: This is where we would enter the CPU execution loop
-    // cpu->Run(ctx->info.entry, ctx->arg);
-    // For now, just simulate work
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    auto *mem_manager = Core::Memory::MemoryManager::Instance();
+    if (mem_manager) {
+      void *host_entry = mem_manager->GetHostPtr(ctx->info.entry);
+      if (!host_entry) {
+        printf("[KernelManager] ERROR: Invalid guest entry point 0x%llx\n",
+               ctx->info.entry);
+        ctx->info.running = false;
+        ctx->info.exited = true;
+        return;
+      }
+
+      void *range_start = nullptr;
+      void *range_end = nullptr;
+      uint32_t prot = 0;
+      if (mem_manager->QueryProtection(ctx->info.entry, &range_start,
+                                       &range_end, &prot) != 0 ||
+          !(prot & 4)) {
+        printf("[KernelManager] ERROR: Entry point 0x%llx is not executable or "
+               "not mapped\n",
+               ctx->info.entry);
+        ctx->info.running = false;
+        ctx->info.exited = true;
+        return;
+      }
+
+      printf("[KernelManager] JMP to host address: %p\n", host_entry);
+
+      // Cast to function pointer and execute (SysV vs MSVC ABI mismatch
+      // is fine for now since the game entry point technically never returns,
+      // it calls exit() or loops forever).
+      void (*entry_func)(void *) =
+          reinterpret_cast<void (*)(void *)>(host_entry);
+      
+      try {
+          entry_func((void *)ctx->arg);
+      } catch (...) {
+          printf("[KernelManager] Exception during thread execution!\n");
+      }
+    }
 
     printf("[KernelManager] Thread '%s' finished execution\n",
            ctx->info.name.c_str());
@@ -109,10 +147,8 @@ void KernelManager::StartThread(uint32_t handle) {
     ctx->info.exited = true;
   });
 
-  // Detach for now so we don't crash on destructor if not joined, or manage
-  // joinable state
-  if (ctx->native_thread.joinable())
-    ctx->native_thread.detach();
+  // Do NOT detach here. Keeping the thread joinable allows the 
+  // destructor to wait for it, preventing use-after-free on shutdown.
 }
 
 void KernelManager::ExitThread(uint32_t handle, int exitCode) {
@@ -130,11 +166,13 @@ void KernelManager::ExitThread(uint32_t handle, int exitCode) {
 }
 
 void KernelManager::JoinThread(uint32_t handle) {
-  // Since we detached, we can't join.
-  // Real implementation would use condition variables.
-  printf("[KernelManager] JoinThread(0x%X) called, but threads are currently "
-         "detached.\n",
-         handle);
+  std::lock_guard<std::mutex> lock(g_thread_mutex);
+  if (g_threads.count(handle)) {
+    ThreadContext *ctx = g_threads[handle];
+    if (ctx->native_thread.joinable()) {
+      ctx->native_thread.join();
+    }
+  }
 }
 
 } // namespace Core::Kernel
