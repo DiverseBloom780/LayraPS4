@@ -1,5 +1,6 @@
 // src/core/loader/elf_loader.cpp
 #include "elf_loader.h"
+#include "cpu_patcher.h"
 #include "core/kernel/module_manager.h"
 #include "core/memory/memory_manager.h"
 
@@ -54,23 +55,19 @@ ElfLoader::LoadResult ElfLoader::Load(const std::string &path) {
 
   // Calculate load base for relocatable ELFs (ET_DYN)
   uint64_t load_base = 0;
-  if (ehdr.e_type == 3) { // ET_DYN
-    // Determine the total size needed for the image
-    // Find min and max vaddr
-    uint64_t min_vaddr = UINT64_MAX;
-    uint64_t max_vaddr = 0;
+  uint64_t min_vaddr = UINT64_MAX;
+  uint64_t max_vaddr = 0;
 
-    for (const auto &phdr : phdrs) {
-      if (phdr.p_type == PT_LOAD) {
-        if (phdr.p_vaddr < min_vaddr)
-          min_vaddr = phdr.p_vaddr;
-        if (phdr.p_vaddr + phdr.p_memsz > max_vaddr)
-          max_vaddr = phdr.p_vaddr + phdr.p_memsz;
-      }
+  for (const auto &phdr : phdrs) {
+    if (phdr.p_type == PT_LOAD) {
+      if (phdr.p_vaddr < min_vaddr)
+        min_vaddr = phdr.p_vaddr;
+      if (phdr.p_vaddr + phdr.p_memsz > max_vaddr)
+        max_vaddr = phdr.p_vaddr + phdr.p_memsz;
     }
+  }
 
-    // uint64_t image_size = max_vaddr - min_vaddr; // This is calculated later
-
+  if (ehdr.e_type == 3) { // ET_DYN
     // Find a free region for this image
     // For now, simpler: Use a fixed base for the main executable if possible,
     // or allocate via MemoryManager Just hardcoding 0x400000 for main
@@ -90,22 +87,19 @@ ElfLoader::LoadResult ElfLoader::Load(const std::string &path) {
   }
   HandleImports(data, ehdr, phdrs);
 
-  // Calculate total size
-  uint64_t min_vaddr = UINT64_MAX;
-  uint64_t max_vaddr = 0;
+  // Apply CPU patches to fix FS segment conflicts on Windows
+  // This must be done after mapping segments to memory
+  ApplyLitePatches(reinterpret_cast<uint8_t *>(load_base + min_vaddr), max_vaddr - min_vaddr);
 
-  for (const auto &phdr : phdrs) {
-    if (phdr.p_type == PT_LOAD) {
-      if (phdr.p_vaddr < min_vaddr)
-        min_vaddr = phdr.p_vaddr;
-      if (phdr.p_vaddr + phdr.p_memsz > max_vaddr)
-        max_vaddr = phdr.p_vaddr + phdr.p_memsz;
-    }
-  }
-
+  // Return load result
+  LoadResult result;
+  result.success = true;
+  result.entry_point = load_base + ehdr.e_entry;
+  result.load_base = load_base;
+  result.image_size = max_vaddr - min_vaddr;
   printf("[Loader] ELF loaded successfully. Entry point: 0x%llx\n",
          load_base + ehdr.e_entry);
-  return {true, load_base + ehdr.e_entry, load_base, max_vaddr - min_vaddr, ""};
+  return result;
 }
 
 bool ElfLoader::ParseHeaders(const std::vector<uint8_t> &data, Elf64_Ehdr &ehdr,
@@ -155,13 +149,29 @@ bool ElfLoader::MapSegments(const std::vector<uint8_t> &data,
     if (phdr.p_type == PT_LOAD || phdr.p_type == PT_SCE_RELRO ||
         phdr.p_type == PT_SCE_DYNLIBDATA) {
 
+      if (phdr.p_memsz == 0)
+        continue;
+
       uint64_t vaddr = load_base + phdr.p_vaddr;
+
+      uint32_t map_prot = 0;
+      if (phdr.p_flags & 4) // PF_R
+        map_prot |= 1;
+      if (phdr.p_flags & 2) // PF_W
+        map_prot |= 2;
+      if (phdr.p_flags & 1) // PF_X
+        map_prot |= 4;
 
       std::cout << "[Loader] Mapping segment: type=0x" << std::hex
                 << phdr.p_type << ", vaddr=0x" << vaddr << ", size=0x"
-                << phdr.p_memsz << std::dec << "\n";
+                << phdr.p_memsz << ", prot=0x" << phdr.p_flags << std::dec
+                << "\n";
 
-      memory->Map(vaddr, phdr.p_memsz, phdr.p_flags, "ELF_SEGMENT");
+      if (!memory->Map(vaddr, phdr.p_memsz, map_prot, "ELF_SEGMENT")) {
+        std::cerr << "[Loader] Failed to map ELF segment at vaddr 0x" << std::hex
+                  << vaddr << std::dec << "\n";
+        return false;
+      }
 
       if (phdr.p_filesz > 0) {
         size_t file_offset = static_cast<size_t>(phdr.p_offset);
@@ -283,14 +293,23 @@ bool ElfLoader::ApplyRelocations(const std::vector<uint8_t> &data,
             if (resolved_addr != 0) {
               uint64_t value = resolved_addr + rela.r_addend;
               memory->Write(target_vaddr, &value, sizeof(value));
-              // std::cout << "[Loader] Resolved import: " << sym_name << " ->
-              // 0x"
-              //           << std::hex << resolved_addr << std::dec << "\n";
+              printf("[Loader] Resolved import: %s -> 0x%llx\n", sym_name,
+                     (unsigned long long)resolved_addr);
             } else {
-              // std::cout << "[Loader] Unresolved import for relocation: "
-              //           << sym_name << "\n";
+              printf("[Loader] ERROR: Unresolved import: %s\n", sym_name);
+              return false;
             }
+          } else {
+            printf("[Loader] ERROR: No module manager available to resolve %s\n",
+                   sym_name);
+            return false;
           }
+        } else {
+          std::cerr << "[Loader] ERROR: Cannot resolve relocation for symbol "
+                       "index "
+                    << sym_idx << " because symbol or string table is "
+                               "missing\n";
+          return false;
         }
       }
       break;
