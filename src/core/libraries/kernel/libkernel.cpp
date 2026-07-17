@@ -1,6 +1,7 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -8,6 +9,11 @@
 #include <string>
 #include <vector>
 
+#include "common/io_file.h"
+#include "core/file_sys/fs.h"
+#include "core/libraries/kernel/equeue.h"
+#include "core/libraries/kernel/process.h"
+#include "core/libraries/kernel/time.h"
 #include "core/memory/memory_manager.h"
 #include "libkernel.h"
 
@@ -27,6 +33,16 @@ void ErrSceToPosix(int32_t error) {
 int32_t ErrnoToSceKernelError(int32_t error) {
   // TODO: Mapping logic
   return error;
+}
+
+// FileSystem static pointers (set during init)
+static Core::FileSys::MntPoints *g_mnt_points = nullptr;
+static Core::FileSys::HandleTable *g_handle_table = nullptr;
+
+void SetFileSysPointers(void *mnt, void *htab) {
+  g_mnt_points = static_cast<Core::FileSys::MntPoints *>(mnt);
+  g_handle_table = static_cast<Core::FileSys::HandleTable *>(htab);
+  printf("[libkernel] FileSystem pointers set (mnt=%p, htab=%p)\n", mnt, htab);
 }
 
 // HLE Function Implementations
@@ -466,9 +482,323 @@ int32_t sceKernelSignalSema(OrbisKernelSema sem, int32_t signalCount) {
   return 0;
 }
 
+// FileSystem HLE Implementation
+
+int32_t sceKernelOpen(const char *path, int32_t flags, uint16_t mode) {
+  if (!path || !g_mnt_points || !g_handle_table) {
+    printf("[libkernel] sceKernelOpen failed: null pointer\n");
+    return -1;
+  }
+
+  printf("[libkernel] sceKernelOpen: %s flags=0x%x mode=0x%x\n", path, flags,
+         mode);
+
+  bool read = (flags & 0x3) == ORBIS_KERNEL_O_RDONLY;
+  bool write = (flags & 0x3) == ORBIS_KERNEL_O_WRONLY;
+  bool rdwr = (flags & 0x3) == ORBIS_KERNEL_O_RDWR;
+  bool create = (flags & ORBIS_KERNEL_O_CREAT) != 0;
+  bool trunc = (flags & ORBIS_KERNEL_O_TRUNC) != 0;
+  bool append = (flags & ORBIS_KERNEL_O_APPEND) != 0;
+  bool directory = (flags & ORBIS_KERNEL_O_DIRECTORY) != 0;
+
+  // Translate guest path to host path
+  bool read_only = false;
+  auto host_path = g_mnt_points->GetHostPath(path, &read_only);
+
+  if (host_path.empty()) {
+    printf("[libkernel] sceKernelOpen: no mount point for '%s'\n", path);
+    *__Error() = 2; // ENOENT
+    return -1;
+  }
+
+  bool exists = std::filesystem::exists(host_path);
+
+  if (create && !exists) {
+    if (read_only) {
+      *__Error() = 30; // EROFS
+      return -1;
+    }
+    // Create the file
+    Common::IO::File creator(host_path, Common::IO::FileAccessMode::Create);
+  } else if (!exists && !create) {
+    printf("[libkernel] sceKernelOpen: file not found '%s'\n", path);
+    *__Error() = 2; // ENOENT
+    return -1;
+  }
+
+  if (directory || std::filesystem::is_directory(host_path)) {
+    // Directory open - create handle but don't open file
+    int fd = g_handle_table->CreateHandle();
+    auto *file = g_handle_table->GetFile(fd);
+    if (file) {
+      file->is_opened = true;
+      file->type = Core::FileSys::FileType::Directory;
+      file->m_host_name = host_path;
+      file->m_guest_name = path;
+    }
+    printf("[libkernel] sceKernelOpen: opened directory fd=%d\n", fd);
+    return fd;
+  }
+
+  // Regular file
+  int fd = g_handle_table->CreateHandle();
+  auto *file = g_handle_table->GetFile(fd);
+  if (!file) {
+    return -1;
+  }
+
+  file->m_host_name = host_path;
+  file->m_guest_name = path;
+  file->type = Core::FileSys::FileType::Regular;
+  file->f = std::make_unique<Common::IO::File>();
+
+  Common::IO::FileAccessMode access_mode = Common::IO::FileAccessMode::Read;
+  if (read) {
+    access_mode = Common::IO::FileAccessMode::Read;
+  } else if (write) {
+    access_mode = append ? Common::IO::FileAccessMode::Append
+                         : Common::IO::FileAccessMode::Write;
+  } else if (rdwr) {
+    access_mode = append ? Common::IO::FileAccessMode::ReadAppend
+                         : Common::IO::FileAccessMode::ReadWrite;
+  }
+
+  if (trunc) {
+    access_mode = Common::IO::FileAccessMode::Create; // w+b truncates
+  }
+
+  int err = file->f->Open(host_path, access_mode);
+  if (err != 0) {
+    printf("[libkernel] sceKernelOpen: failed to open '%s' err=%d\n", path,
+           err);
+    g_handle_table->DeleteHandle(fd);
+    *__Error() = err;
+    return -1;
+  }
+
+  file->is_opened = true;
+  printf("[libkernel] sceKernelOpen: success fd=%d\n", fd);
+  return fd;
+}
+
+int32_t sceKernelClose(int32_t fd) {
+  if (!g_handle_table)
+    return -1;
+  printf("[libkernel] sceKernelClose: fd=%d\n", fd);
+
+  auto *file = g_handle_table->GetFile(fd);
+  if (!file || !file->is_opened) {
+    *__Error() = 9; // EBADF
+    return -1;
+  }
+
+  if (file->f) {
+    file->f->Close();
+  }
+  file->is_opened = false;
+  g_handle_table->DeleteHandle(fd);
+  return 0;
+}
+
+int64_t sceKernelRead(int32_t fd, void *buf, uint64_t nbytes) {
+  if (!g_handle_table || !buf)
+    return -1;
+
+  auto *file = g_handle_table->GetFile(fd);
+  if (!file || !file->is_opened) {
+    *__Error() = 9; // EBADF
+    return -1;
+  }
+
+  if (file->type == Core::FileSys::FileType::Device) {
+    // Stdin reads return 0 (EOF)
+    return 0;
+  }
+
+  if (!file->f || !file->f->IsOpen()) {
+    *__Error() = 9;
+    return -1;
+  }
+
+  size_t bytes_read = file->f->Read(buf, static_cast<size_t>(nbytes));
+  return static_cast<int64_t>(bytes_read);
+}
+
+int64_t sceKernelWrite(int32_t fd, const void *buf, uint64_t nbytes) {
+  if (!g_handle_table || !buf)
+    return -1;
+
+  auto *file = g_handle_table->GetFile(fd);
+  if (!file || !file->is_opened) {
+    *__Error() = 9;
+    return -1;
+  }
+
+  // stdout / stderr → redirect to host console
+  if (file->type == Core::FileSys::FileType::Device) {
+    if (file->m_guest_name == "/dev/stdout" ||
+        file->m_guest_name == "/dev/stderr") {
+      fwrite(buf, 1, static_cast<size_t>(nbytes),
+             file->m_guest_name == "/dev/stdout" ? stdout : stderr);
+      return static_cast<int64_t>(nbytes);
+    }
+    return static_cast<int64_t>(nbytes); // Consume silently for other devices
+  }
+
+  if (!file->f || !file->f->IsOpen()) {
+    *__Error() = 9;
+    return -1;
+  }
+
+  size_t bytes_written = file->f->Write(buf, static_cast<size_t>(nbytes));
+  return static_cast<int64_t>(bytes_written);
+}
+
+int64_t sceKernelLseek(int32_t fd, int64_t offset, int32_t whence) {
+  if (!g_handle_table)
+    return -1;
+
+  auto *file = g_handle_table->GetFile(fd);
+  if (!file || !file->is_opened || !file->f) {
+    *__Error() = 9;
+    return -1;
+  }
+
+  return file->f->Seek(offset, whence);
+}
+
+static void FillStat(OrbisKernelStat *sb, const std::filesystem::path &path) {
+  std::memset(sb, 0, sizeof(OrbisKernelStat));
+  std::error_code ec;
+  auto status = std::filesystem::status(path, ec);
+  if (ec)
+    return;
+
+  if (std::filesystem::is_regular_file(status)) {
+    sb->st_mode = 0100644; // S_IFREG | 0644
+    sb->st_size = static_cast<int64_t>(std::filesystem::file_size(path, ec));
+  } else if (std::filesystem::is_directory(status)) {
+    sb->st_mode = 0040755; // S_IFDIR | 0755
+    sb->st_size = 0;
+  }
+
+  sb->st_blksize = 512;
+  sb->st_blocks = (sb->st_size + 511) / 512;
+  sb->st_nlink = 1;
+
+  // File times
+  auto ftime = std::filesystem::last_write_time(path, ec);
+  if (!ec) {
+    auto sys_time = std::chrono::clock_cast<std::chrono::system_clock>(ftime);
+    auto secs = std::chrono::duration_cast<std::chrono::seconds>(
+                    sys_time.time_since_epoch())
+                    .count();
+    sb->st_mtime = secs;
+    sb->st_atime = secs;
+    sb->st_ctime = secs;
+  }
+}
+
+int32_t sceKernelStat(const char *path, OrbisKernelStat *sb) {
+  if (!path || !sb || !g_mnt_points)
+    return -1;
+  printf("[libkernel] sceKernelStat: %s\n", path);
+
+  auto host_path = g_mnt_points->GetHostPath(path);
+  if (host_path.empty() || !std::filesystem::exists(host_path)) {
+    *__Error() = 2; // ENOENT
+    return -1;
+  }
+
+  FillStat(sb, host_path);
+  return 0;
+}
+
+int32_t sceKernelFstat(int32_t fd, OrbisKernelStat *sb) {
+  if (!sb || !g_handle_table)
+    return -1;
+  printf("[libkernel] sceKernelFstat: fd=%d\n", fd);
+
+  auto *file = g_handle_table->GetFile(fd);
+  if (!file || !file->is_opened) {
+    *__Error() = 9; // EBADF
+    return -1;
+  }
+
+  if (file->type == Core::FileSys::FileType::Device) {
+    std::memset(sb, 0, sizeof(OrbisKernelStat));
+    sb->st_mode = 0020666; // S_IFCHR
+    return 0;
+  }
+
+  FillStat(sb, file->m_host_name);
+  return 0;
+}
+
+// --- Critical Boot Stubs ---
+
+static u64 g_stack_chk_guard = 0xDEADBEEF54321ABCULL;
+
+static void stack_chk_fail() {
+  printf("[Kernel] FATAL: __stack_chk_fail called!\n");
+  // In a real scenario this would abort, but for now just log
+}
+
+const char *PS4_SYSV_ABI sceKernelGetFsSandboxRandomWord() { return "sys"; }
+
+int32_t PS4_SYSV_ABI _sigprocmask() { return 0; }
+
+int32_t PS4_SYSV_ABI posix_getpagesize() { return 16384; } // 16KB PS4 pages
+
+// sysconf — returns system config values
+static uint64_t PS4_SYSV_ABI posix_sysconf(int32_t name) {
+  switch (name) {
+  case 47: // _SC_PAGESIZE
+    return 16384;
+  case 58: // _SC_THREAD_STACK_MIN
+    return 16384;
+  case 68: // _SC_NPROCESSORS_ONLN
+    return 8; // PS4 has 8 cores
+  default:
+    printf("[Kernel] posix_sysconf: unhandled name=%d\n", name);
+    return 0;
+  }
+}
+
+// Heap trace info (libc)
+struct HeapInfoInfo {
+  uint64_t size;
+  uint32_t flag;
+  uint32_t getSegmentInfo;
+  uint64_t *mspace_atomic_id_mask;
+  uint64_t *mstate_table;
+};
+
+static uint64_t g_mspace_atomic_id_mask = 0;
+static uint64_t g_mstate_table[64] = {0};
+
+void PS4_SYSV_ABI sceLibcHeapGetTraceInfo(HeapInfoInfo *info) {
+  if (!info) return;
+  info->mspace_atomic_id_mask = &g_mspace_atomic_id_mask;
+  info->mstate_table = g_mstate_table;
+  info->getSegmentInfo = 0;
+}
+
+// Entry params
+static int32_t g_argc = 1;
+static const char *g_argv_data[] = {"eboot.bin", nullptr};
+static const char **g_argv = g_argv_data;
+
+int32_t PS4_SYSV_ABI getargc() { return g_argc; }
+const char **PS4_SYSV_ABI getargv() { return g_argv; }
+
 // Registration function
 void RegisterLibKernel(::Core::Kernel::ModuleManager *module_manager) {
-  printf("[libkernel] Registering HLE functions...\n");
+  printf("[LibKernel] Registering functions...\n");
+
+  RegisterProcess(module_manager);
+  RegisterTime(module_manager);
+  RegisterEventQueue(module_manager);
 
   // Core
   LIB_FUNCTION("D4yla3vx4tY", "libkernel", 1, "libkernel", sceKernelError);
@@ -571,6 +901,36 @@ void RegisterLibKernel(::Core::Kernel::ModuleManager *module_manager) {
                sceKernelReleaseDirectMemory);
   LIB_FUNCTION("cQke9UuBQOk", "libkernel", 1, "libkernel", sceKernelMunmap);
   LIB_FUNCTION("vSMAm3cxYTY", "libkernel", 1, "libkernel", sceKernelMprotect);
+
+  // FileSystem
+  LIB_FUNCTION("1G3lF1Gg1k8", "libkernel", 1, "libkernel", sceKernelOpen);
+  LIB_FUNCTION("UK2Tl2DWUns", "libkernel", 1, "libkernel", sceKernelClose);
+  LIB_FUNCTION("Cg4srZ6TKbU", "libkernel", 1, "libkernel", sceKernelRead);
+  LIB_FUNCTION("4wSze92BhLI", "libkernel", 1, "libkernel", sceKernelWrite);
+  LIB_FUNCTION("oib76F-12fk", "libkernel", 1, "libkernel", sceKernelLseek);
+  LIB_FUNCTION("eV9wAD2riIA", "libkernel", 1, "libkernel", sceKernelStat);
+  LIB_FUNCTION("kBwCPsYX-m4", "libkernel", 1, "libkernel", sceKernelFstat);
+
+  // Critical boot functions
+  LIB_FUNCTION("JGfTMBOdUJo", "libkernel", 1, "libkernel",
+               sceKernelGetFsSandboxRandomWord);
+  LIB_FUNCTION("6xVpy0Fdq+I", "libkernel", 1, "libkernel", _sigprocmask);
+  LIB_FUNCTION("Ou3iL1abvng", "libkernel", 1, "libkernel", stack_chk_fail);
+  LIB_FUNCTION("k+AXqu2-eBc", "libkernel", 1, "libkernel", posix_getpagesize);
+  LIB_FUNCTION("k+AXqu2-eBc", "libScePosix", 1, "libkernel",
+               posix_getpagesize);
+  LIB_FUNCTION("NWtTN10cJzE", "libSceLibcInternalExt", 1,
+               "libSceLibcInternal", sceLibcHeapGetTraceInfo);
+  LIB_FUNCTION("mkawd0NA9ts", "libkernel", 1, "libkernel", posix_sysconf);
+  LIB_FUNCTION("mkawd0NA9ts", "libScePosix", 1, "libkernel", posix_sysconf);
+  LIB_FUNCTION("iKJMWrAumPE", "libkernel", 1, "libkernel", getargc);
+  LIB_FUNCTION("FJmglmTMdr4", "libkernel", 1, "libkernel", getargv);
+
+  // Stack guard object
+  module_manager->RegisterHLEExport("libkernel", "f7uOxY9mM1U",
+                                    "__stack_chk_guard",
+                                    reinterpret_cast<uint64_t>(
+                                        &g_stack_chk_guard));
 
   printf("[libkernel] Registration complete.\n");
 }

@@ -43,6 +43,45 @@ constexpr uint32_t R_X86_64_GLOB_DAT = 6;
 constexpr uint32_t R_X86_64_JUMP_SLOT = 7;
 constexpr uint32_t R_X86_64_RELATIVE = 8;
 
+// PS4 SELF (Signed ELF) magic signature
+constexpr uint32_t SELF_MAGIC = 0x1D3D154F;
+
+// ── PS4 SELF header (based on shadPS4 reference) ──────────────────────
+struct SelfHeader {
+  uint32_t magic;          // 0x1D3D154F
+  uint8_t  version;        // 0x00
+  uint8_t  mode;           // 0x01
+  uint8_t  endian;         // 0x01 = little-endian
+  uint8_t  attributes;     // 0x12
+  uint8_t  category;       // 0x01
+  uint8_t  program_type;   // 0x01
+  uint16_t padding1;
+  uint16_t header_size;
+  uint16_t meta_size;
+  uint32_t file_size;
+  uint32_t padding2;
+  uint16_t segment_count;
+  uint16_t unknown1a;      // always 0x22
+  uint32_t padding3;
+};
+
+// ── SELF segment header ───────────────────────────────────────────────
+struct SelfSegmentHeader {
+  uint64_t flags;
+  uint64_t file_offset;    // Where in the SELF file this segment's data lives
+  uint64_t file_size;
+  uint64_t memory_size;
+
+  // A "blocked" segment contains loadable data mapped to a program header
+  bool IsBlocked() const { return (flags & 0x800) != 0; }
+  // The program-header index this segment corresponds to
+  uint32_t GetId() const { return (flags >> 20u) & 0xFFFu; }
+  // Check if segment data is encrypted (retail discs only)
+  bool IsEncrypted() const { return (flags & 2) != 0; }
+  // Check if segment data is compressed
+  bool IsCompressed() const { return (flags & 8) != 0; }
+};
+
 } // namespace Loader
 
 namespace Kernel {
@@ -71,6 +110,12 @@ public:
 private:
   Memory::MemoryManager *memory;
   Kernel::ModuleManager *module_manager;
+
+  // ── SELF state ────────────────────────────────────────────────────
+  bool is_self = false;
+  SelfHeader self_header{};
+  std::vector<SelfSegmentHeader> self_segments;
+  size_t elf_header_offset = 0;  // Where the ELF header starts in file
 
   struct Elf64_Ehdr {
     uint8_t e_ident[16];
@@ -123,6 +168,7 @@ private:
     uint64_t st_size;
   };
 
+  bool DetectAndParseSelf(const std::vector<uint8_t> &data);
   bool ParseHeaders(const std::vector<uint8_t> &data, Elf64_Ehdr &ehdr,
                     std::vector<Elf64_Phdr> &phdrs);
   bool MapSegments(const std::vector<uint8_t> &data,
@@ -133,6 +179,13 @@ private:
                         uint64_t load_base);
   bool HandleImports(const std::vector<uint8_t> &data, const Elf64_Ehdr &ehdr,
                      const std::vector<Elf64_Phdr> &phdrs);
+
+  // For SELF files: resolve the actual file offset for a given ELF segment
+  // Returns the file offset of the data, or SIZE_MAX on failure
+  size_t ResolveSegmentFileOffset(const std::vector<Elf64_Phdr> &phdrs,
+                                  const std::vector<uint8_t> &data,
+                                  uint64_t desired_offset,
+                                  uint64_t desired_size) const;
 };
 
 } // namespace Loader

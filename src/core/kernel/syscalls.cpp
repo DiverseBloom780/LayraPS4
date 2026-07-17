@@ -1,11 +1,10 @@
-// SPDX-FileCopyrightText: Copyright 2025 LayraPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include "syscalls.h"
+#include "syscall_handler.h"
 #include "kernel_manager.h"
+#include "../memory/memory_manager.h"
 #include <cstdio>
 #include <cstring>
-#include <iostream>
 
 namespace Core::Kernel {
 
@@ -31,7 +30,7 @@ SyscallHandler::~SyscallHandler() {}
 
 void SyscallHandler::RegisterSyscall(int id, SyscallFn handler,
                                      const std::string &name) {
-  syscall_table[id] = {handler, name};
+  syscall_table[id] = {handler, name, id};
 }
 
 uint64_t SyscallHandler::Dispatch(int id, void *context, uint64_t *args) {
@@ -62,28 +61,27 @@ uint64_t SyscallHandler::sys_write(void *context, uint64_t *args) {
   uint64_t buf_ptr = args[1];
   size_t count = (size_t)args[2];
 
-  // For now we can only easily support stdout/stderr which map to host
-  // stdout/stderr But referencing a guest pointer 'buf_ptr' requires
-  // dereferencing it via MemoryManager! We don't have easy access to
-  // MemoryManager here unless context provides it or generic translation.
+  auto *mem_manager = Core::Memory::MemoryManager::Instance();
+  const char *host_ptr = nullptr;
+  if (mem_manager) {
+    host_ptr = reinterpret_cast<const char *>(mem_manager->GetHostPtr(buf_ptr));
+  }
 
-  // Hack: Assuming buf_ptr is a valid host pointer for now (because we don't
-  // have guest memory context passed yet) WAIT! Phase 3 implemented
-  // MemoryManager translation. Ideally we should use
-  // MemoryManager::GetInstance()->GetHostPtr(buf_ptr).
+  if (!host_ptr) {
+    printf("[Syscall] sys_write failed: invalid guest pointer 0x%llx\n",
+           (unsigned long long)buf_ptr);
+    return static_cast<uint64_t>(-1);
+  }
 
-  // Let's assume for this test that args passed in manual verification are
-  // valid pointers or handles. But for correctness: const char* str = (const
-  // char*)MemoryManager::GetInstance()->GetHostPtr(buf_ptr);
-
-  // Let's just print "sys_write called" for now to avoid dependency hell in
-  // this file before verification.
-  printf("[Syscall] sys_write(fd=%d, count=%llu) called\n", fd,
-         (unsigned long long)count);
-
-  // If we want to print the string, we need MemoryManager.
-  // I'll skip printing the string content for this specific initial
-  // implementation to ensure build passes first.
+  if (fd == 1) {
+    fwrite(host_ptr, 1, count, stdout);
+    fflush(stdout);
+  } else if (fd == 2) {
+    fwrite(host_ptr, 1, count, stderr);
+    fflush(stderr);
+  } else {
+    printf("[Syscall] sys_write unsupported fd=%d\n", fd);
+  }
 
   return count;
 }

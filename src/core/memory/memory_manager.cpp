@@ -26,21 +26,25 @@ MemoryManager::MemoryManager() {
   free_area.allocated = false;
   phys_map_[0] = free_area;
 
-  // Initialize AddressSpace backend
+  // Initialize AddressSpace backend (identity-mapped)
   address_space_ = std::make_unique<AddressSpace>();
 
-  if (!address_space_->GetBase()) {
+  if (!address_space_) {
     fprintf(stderr,
-            "[MemoryManager] FATAL: Failed to initialize AddressSpace!\n");
+            "[MemoryManager] FATAL: Failed to create AddressSpace!\n");
+    return;
   }
 
-  if (!Initialize()) {
+  if (!address_space_->IsValid()) {
     fprintf(stderr,
-            "[MemoryManager] FATAL: Failed to initialize MemoryManager base address!\n");
+            "[MemoryManager] FATAL: AddressSpace initialization failed!\n");
+    return;
   }
 
   // Set singleton
   s_instance_ = this;
+  
+  printf("[MemoryManager] Successfully initialized (identity-mapped)\n");
 }
 
 MemoryManager::~MemoryManager() {
@@ -53,13 +57,9 @@ MemoryManager::~MemoryManager() {
 MemoryManager *MemoryManager::Instance() { return s_instance_; }
 
 bool MemoryManager::Initialize() {
-  base_addr_ = static_cast<uint8_t *>(address_space_->GetBase());
-  if (base_addr_) {
-    printf("[MemoryManager] AddressSpace base: %p\n", base_addr_);
-  } else {
-    fprintf(stderr, "[MemoryManager] CRITICAL: AddressSpace has no base!\n");
-  }
-  return base_addr_ != nullptr;
+  // Identity mapping: no base address offset needed.
+  // Just verify the address space is valid.
+  return address_space_ && address_space_->IsValid();
 }
 
 // --- Simple read/write (used by gui_debugger) ---
@@ -71,12 +71,10 @@ void MemoryManager::Read(uint64_t vaddr, void *dest, size_t size) {
     it--;
     if (vaddr >= it->second.base &&
         vaddr + size <= it->second.base + it->second.size) {
-      if (base_addr_) {
-        void *host_ptr = GetHostPtr(vaddr);
-        if (host_ptr) {
-          memcpy(dest, host_ptr, size);
-          return;
-        }
+      void *host_ptr = GetHostPtr(vaddr);
+      if (host_ptr) {
+        memcpy(dest, host_ptr, size);
+        return;
       }
     }
   }
@@ -91,11 +89,9 @@ void MemoryManager::Write(uint64_t vaddr, const void *src, size_t size) {
     if (vaddr >= it->second.base &&
         vaddr + size <= it->second.base + it->second.size) {
       if (it->second.prot & 2) { // Write permission
-        if (base_addr_) {
-          void *host_ptr = GetHostPtr(vaddr);
-          if (host_ptr) {
-            memcpy(host_ptr, src, size);
-          }
+        void *host_ptr = GetHostPtr(vaddr);
+        if (host_ptr) {
+          memcpy(host_ptr, src, size);
         }
       }
     }
@@ -104,7 +100,9 @@ void MemoryManager::Write(uint64_t vaddr, const void *src, size_t size) {
 
 bool MemoryManager::Map(uint64_t vaddr, uint64_t size, uint32_t flags,
                          const char *name) {
-  int32_t result = MapMemory(nullptr, vaddr, size, flags, 0, 0, name, false,
+  // Preserve explicit addresses, including guest address 0, when mapping ELF
+  // segments or other fixed virtual ranges.
+  int32_t result = MapMemory(nullptr, vaddr, size, flags, 0, 0, name, true,
                              -1, 0);
   if (result != 0) {
     fprintf(stderr,
@@ -239,11 +237,29 @@ int32_t MemoryManager::MapMemory(void **addr, VAddr in_addr, uint64_t len,
   std::lock_guard<std::mutex> lock(mutex_);
 
   VAddr target_addr = in_addr;
+  bool explicit_address = should_check || in_addr != 0;
 
-  if (target_addr == 0) {
+  if (target_addr == 0 && !explicit_address) {
     if (alignment == 0)
       alignment = 0x4000;
     target_addr = FindFreeVirtualRange(len, alignment);
+  }
+
+  if (explicit_address) {
+    // Explicit mappings must not overlap existing VMAs.
+    for (const auto &[base, vma] : vma_map_) {
+      if (target_addr < base + vma.size && base < target_addr + len) {
+        fprintf(stderr,
+                "[MemoryManager] ERROR: Explicit map overlaps existing VMA "
+                "(guest 0x%llx, size 0x%llx) with existing VMA base=0x%llx, size=0x%llx, name='%s'\n",
+                static_cast<unsigned long long>(target_addr),
+                static_cast<unsigned long long>(len),
+                static_cast<unsigned long long>(base),
+                static_cast<unsigned long long>(vma.size),
+                vma.name.c_str());
+        return 0x80020016;
+      }
+    }
   }
 
   VirtualMemoryArea vma{};
@@ -253,7 +269,12 @@ int32_t MemoryManager::MapMemory(void **addr, VAddr in_addr, uint64_t len,
   vma.prot = prot;
   vma.name = name ? name : "anon";
   vma.phys_addr = phys_addr;
-  vma_map_[target_addr] = vma;
+    // Insert VMA and log the mapping for diagnostic purposes
+    vma_map_[target_addr] = vma;
+    printf("[MemoryManager] VMA Inserted: base=0x%llx size=0x%llx type=%d prot=0x%x name='%s' phys=0x%llx\n",
+      static_cast<unsigned long long>(vma.base),
+      static_cast<unsigned long long>(vma.size), vma.type, vma.prot,
+      vma.name.c_str(), static_cast<unsigned long long>(vma.phys_addr));
 
   if (vma_type == 3) {
     flexible_used_ += len;
@@ -267,32 +288,26 @@ int32_t MemoryManager::MapMemory(void **addr, VAddr in_addr, uint64_t len,
   if (prot & 4)
     p = (Protection)((uint32_t)p | (uint32_t)Protection::Execute);
 
-  // Calculate Host Address relative to Base
-  // AddressSpace Map expects a HOST ADDRESS if reserved.
-  // Wait, if AddressSpace::Map expects a host address (as VAddr), does it check
-  // if it falls in range? Yes. So we pass base_addr_ + target_addr
-
-  uint64_t host_vaddr = (uint64_t)base_addr_ + target_addr;
-
-  void *result = address_space_->Map(host_vaddr, len, (uint64_t)phys_addr, p);
+  // Identity mapping: pass the guest address directly to AddressSpace.
+  // No base offset needed.
+  void *result = address_space_->Map(target_addr, len, (uint64_t)phys_addr, p);
 
   if (!result) {
     fprintf(stderr,
-            "[MemoryManager] AddressSpace Map failed! Guest: 0x%llx, Host: "
-            "0x%llx\n",
-            target_addr, host_vaddr);
+            "[MemoryManager] AddressSpace Map failed! Guest: 0x%llx\n",
+            (unsigned long long)target_addr);
     // Clean up VMA?
     vma_map_.erase(target_addr);
     return 0x80020016; // ENOMEM
   }
 
   if (addr)
-    *addr = result; // Return Host Pointer
+    *addr = result; // Return Host Pointer (same as guest addr in identity map)
 
-  printf("[MemoryManager] Mapped: Guest 0x%llx -> Host 0x%llx, size: 0x%llx, "
+  printf("[MemoryManager] Mapped: Guest 0x%llx -> Host %p, size: 0x%llx, "
          "type: %d, name: '%s'\n",
          static_cast<unsigned long long>(target_addr),
-         static_cast<unsigned long long>(host_vaddr),
+         result,
          static_cast<unsigned long long>(len), vma_type, name);
   return 0;
 }
@@ -306,10 +321,8 @@ int32_t MemoryManager::UnmapMemory(VAddr addr, uint64_t len) {
     }
     vma_map_.erase(it);
 
-    // Address Translation
-    if (base_addr_) {
-      address_space_->Unmap((uint64_t)base_addr_ + addr, len);
-    }
+    // Identity mapping: pass guest address directly
+    address_space_->Unmap(addr, len);
     return 0;
   }
   return 0;
@@ -346,10 +359,8 @@ int32_t MemoryManager::Protect(VAddr addr, uint64_t size, int32_t prot) {
       if (prot & 4)
         p = (Protection)((uint32_t)p | (uint32_t)Protection::Execute);
 
-      // Address Translation
-      if (base_addr_) {
-        address_space_->Protect((uint64_t)base_addr_ + base, vma.size, p);
-      }
+      // Identity mapping: pass guest address directly
+      address_space_->Protect(base, vma.size, p);
       return 0;
     }
   }

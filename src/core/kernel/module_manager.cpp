@@ -16,7 +16,46 @@ std::vector<ModuleInfo> ModuleManager::GetLoadedModules() const { return {}; }
 
 uintptr_t ModuleManager::ResolveSymbol(const std::string &module,
                                        const std::string &symbol) {
-  // TODO: Implement symbol resolution
+  // If a module name is provided, search specifically in that module
+  if (!module.empty()) {
+    // Search in HLE modules first
+    auto hle_it = hle_modules.find(module);
+    if (hle_it != hle_modules.end()) {
+      for (const auto &exp : hle_it->second) {
+        if (exp.name == symbol || exp.nid == symbol) {
+          return static_cast<uintptr_t>(exp.host_address);
+        }
+      }
+    }
+
+    // Search in natively loaded modules (from ELF)
+    for (const auto &mi : loaded_modules) {
+      if (mi.name == module) {
+        auto sym_it = mi.exports.find(symbol);
+        if (sym_it != mi.exports.end()) {
+          return static_cast<uintptr_t>(sym_it->second.address);
+        }
+      }
+    }
+  } else {
+    // Global search across all HLE modules
+    for (const auto &[mod_name, exports] : hle_modules) {
+      for (const auto &exp : exports) {
+        if (exp.name == symbol || exp.nid == symbol) {
+          return static_cast<uintptr_t>(exp.host_address);
+        }
+      }
+    }
+
+    // Global search across all natively loaded modules
+    for (const auto &mi : loaded_modules) {
+      auto sym_it = mi.exports.find(symbol);
+      if (sym_it != mi.exports.end()) {
+        return static_cast<uintptr_t>(sym_it->second.address);
+      }
+    }
+  }
+
   return 0;
 }
 

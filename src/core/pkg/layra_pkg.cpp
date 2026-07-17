@@ -155,8 +155,8 @@ bool layra_pkg_open_and_mount(const char *pkg_filepath,
     }
   }
 
-  // Portable temp directory
-  fs::path temp_dir = fs::temp_directory_path() / "layra_pkg_vfs";
+  // Use the requested mount point so callers can control extraction location.
+  fs::path temp_dir = fs::path(mount_point);
   try {
     fs::create_directories(temp_dir);
   } catch (const fs::filesystem_error &e) {

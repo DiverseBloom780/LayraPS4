@@ -4,6 +4,7 @@
 #pragma once
 
 #include "core/kernel/module_manager.h"
+#include <cstdint>
 #include <string>
 
 namespace Core {
@@ -109,6 +110,47 @@ int32_t sceKernelCreateSema(OrbisKernelSema *sem, const char *name,
 int32_t sceKernelWaitSema(OrbisKernelSema sem, int32_t needCount,
                           uint32_t *pTimeout);
 int32_t sceKernelSignalSema(OrbisKernelSema sem, int32_t signalCount);
+
+// FileSystem Constants
+constexpr int ORBIS_KERNEL_O_RDONLY = 0x0000;
+constexpr int ORBIS_KERNEL_O_WRONLY = 0x0001;
+constexpr int ORBIS_KERNEL_O_RDWR = 0x0002;
+constexpr int ORBIS_KERNEL_O_CREAT = 0x0200;
+constexpr int ORBIS_KERNEL_O_TRUNC = 0x0400;
+constexpr int ORBIS_KERNEL_O_APPEND = 0x0008;
+constexpr int ORBIS_KERNEL_O_DIRECTORY = 0x00020000;
+
+// OrbisKernelStat (simplified from shadPS4)
+struct OrbisKernelStat {
+  uint32_t st_dev;
+  uint32_t st_ino;
+  uint16_t st_mode;
+  uint16_t st_nlink;
+  uint32_t st_uid;
+  uint32_t st_gid;
+  uint32_t st_rdev;
+  int64_t st_atime;
+  int64_t st_mtime;
+  int64_t st_ctime;
+  int64_t st_size;
+  int64_t st_blocks;
+  uint32_t st_blksize;
+  uint32_t st_flags;
+  uint32_t st_gen;
+  int32_t st_lspare;
+  int64_t st_birthtim;
+  uint8_t st_padding[16];
+};
+
+// FileSystem functions
+void SetFileSysPointers(void *mnt, void *htab);
+int32_t sceKernelOpen(const char *path, int32_t flags, uint16_t mode);
+int32_t sceKernelClose(int32_t fd);
+int64_t sceKernelRead(int32_t fd, void *buf, uint64_t nbytes);
+int64_t sceKernelWrite(int32_t fd, const void *buf, uint64_t nbytes);
+int64_t sceKernelLseek(int32_t fd, int64_t offset, int32_t whence);
+int32_t sceKernelStat(const char *path, OrbisKernelStat *sb);
+int32_t sceKernelFstat(int32_t fd, OrbisKernelStat *sb);
 
 // Macros to simplify registration
 #define LIB_FUNCTION(nid, library, version, module, function)                  \

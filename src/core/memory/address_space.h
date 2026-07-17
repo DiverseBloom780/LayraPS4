@@ -33,13 +33,18 @@ public:
   AddressSpace();
   ~AddressSpace();
 
-  // Direct access to base pointers
-  uint8_t *GetBase() const { return base_ptr_; }
-  uint64_t GetSize() const { return total_size_; }
+  // Identity-mapped address space: guest addresses ARE host addresses.
+  // No base offset is needed. GetBackingBase() provides access to the
+  // physical memory backing store for DMA emulation.
+  uint8_t *GetBackingBase() const { return backing_base_; }
+  uint64_t GetBackingSize() const { return backing_size_; }
 
-  // Map memory at specific virtual address
-  // If phys_offset is -1, maps anonymous memory
-  // If phys_offset is valid, maps from the backing file
+  // Returns true if the address space was initialized successfully.
+  bool IsValid() const { return initialized_; }
+
+  // Map memory at the exact virtual address (identity mapping).
+  // If phys_offset is -1, maps anonymous memory.
+  // If phys_offset is valid, maps from the backing file.
   void *Map(uint64_t vaddr, uint64_t size, uint64_t phys_offset,
             Protection prot);
 
@@ -56,8 +61,9 @@ private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
 
-  uint8_t *base_ptr_ = nullptr;
-  uint64_t total_size_ = 0;
+  uint8_t *backing_base_ = nullptr;
+  uint64_t backing_size_ = 0;
+  bool initialized_ = false;
 };
 
 } // namespace Core::Memory

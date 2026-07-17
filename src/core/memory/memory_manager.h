@@ -108,16 +108,17 @@ public:
 
   // Core functionality
   bool Initialize();
+  
+  // Check if MemoryManager was properly initialized
+  bool IsInitialized() const { return address_space_ != nullptr && address_space_->IsValid(); }
 
   // Address Space Access
   AddressSpace &GetAddressSpace() { return *address_space_; }
 
-  // Translate guest virtual address to host pointer. Returns nullptr if the
-  // address is invalid or memory has not been initialized.
+  // Translate guest virtual address to host pointer.
+  // Identity mapping: guest address IS the host address.
   inline void *GetHostPtr(VAddr guest_addr) {
-    if (!base_addr_)
-      return nullptr;
-    return static_cast<void *>(base_addr_ + guest_addr);
+    return reinterpret_cast<void *>(guest_addr);
   }
 
 private:
@@ -143,7 +144,7 @@ private:
   // Helpers
   VAddr FindFreeVirtualRange(uint64_t size, uint64_t alignment);
 
-  uint8_t *base_addr_ = nullptr; // Base address of the reserved user space
+  // Identity mapping: no base_addr_ offset needed.
 };
 
 } // namespace Memory
