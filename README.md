@@ -79,7 +79,7 @@ Begin PSVR subsystem research ⏳
 
 Lead Developer: DiverseBloom780
 
-System Engineer: The Oracle AI
+System Engineers: Google Antigravity, VSCode Raptor Mini, Claude Anthropic. 
 
 Acknowledgments:
 
