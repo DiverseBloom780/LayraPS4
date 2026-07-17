@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(LayraPS4 LANGUAGES C CXX)
+project(LayraPS4 VERSION 0.1 LANGUAGES C CXX)
 
 # Language standards
 set(CMAKE_C_STANDARD 11)
@@ -33,6 +33,22 @@ file(GLOB CORE_SOURCES
     ${LAYRA_ROOT}/src/core/loader/*.c
     ${LAYRA_ROOT}/src/core/kernel/*.cpp
     ${LAYRA_ROOT}/src/core/kernel/*.c
+    ${LAYRA_ROOT}/src/core/file_sys/*.cpp
+    ${LAYRA_ROOT}/src/core/filesys/*.cpp
+    ${LAYRA_ROOT}/src/core/libraries/kernel/*.cpp
+    ${LAYRA_ROOT}/src/core/libraries/libc/*.cpp
+    ${LAYRA_ROOT}/src/core/libraries/videoout/*.cpp
+    ${LAYRA_ROOT}/src/core/libraries/gnmdriver/*.cpp
+    ${LAYRA_ROOT}/src/core/libraries/network/*.cpp
+    ${LAYRA_ROOT}/src/core/libraries/np/*.cpp
+    ${LAYRA_ROOT}/src/core/libraries/pad/*.cpp
+    ${LAYRA_ROOT}/src/core/libraries/system/*.cpp
+    ${LAYRA_ROOT}/src/core/libraries/sysmodule/*.cpp
+    ${LAYRA_ROOT}/src/core/libraries/app_content/*.cpp
+    ${LAYRA_ROOT}/src/core/libraries/audioout/*.cpp
+    ${LAYRA_ROOT}/src/core/libraries/nptrophy/*.cpp
+    ${LAYRA_ROOT}/src/core/libraries/savedata/*.cpp
+    ${LAYRA_ROOT}/src/common/*.cpp
     ${LAYRA_ROOT}/src/core/*.cpp
     ${LAYRA_ROOT}/src/core/*.c
 )
@@ -40,12 +56,15 @@ file(GLOB CORE_SOURCES
 # Explicitly add critical files (in case GLOB misses them or cache is stale)
 list(APPEND CORE_SOURCES
     ${LAYRA_ROOT}/src/core/loader/elf_loader.cpp
+    ${LAYRA_ROOT}/src/core/loader/cpu_patcher.cpp
     ${LAYRA_ROOT}/src/core/kernel/module_manager.cpp
     ${LAYRA_ROOT}/src/core/kernel/kernel_manager.cpp
     ${LAYRA_ROOT}/src/core/kernel/kernel_memory.c
     ${LAYRA_ROOT}/src/core/kernel/syscalls.cpp
     ${LAYRA_ROOT}/src/core/libraries/kernel/libkernel.cpp
     ${LAYRA_ROOT}/src/core/libraries/libc/libc.cpp
+    ${LAYRA_ROOT}/src/core/file_sys/fs.cpp
+    ${LAYRA_ROOT}/src/common/io_file.cpp
     ${LAYRA_ROOT}/src/core/memory/memory_manager.cpp
     ${LAYRA_ROOT}/src/core/memory/memory_manager_bridge.cpp
     ${LAYRA_ROOT}/src/core/memory/address_space.cpp
@@ -55,6 +74,17 @@ list(APPEND CORE_SOURCES
 
 # Remove duplicates
 list(REMOVE_DUPLICATES CORE_SOURCES)
+
+# Remove platform-specific and non-functional modules
+if(WIN32)
+    list(FILTER CORE_SOURCES EXCLUDE REGEX ".*unix_sockets\\.cpp$")
+    list(FILTER CORE_SOURCES EXCLUDE REGEX ".*posix_sockets\\.cpp$")
+endif()
+
+# Exclude network module (not yet adapted from shadPS4 reference)
+list(FILTER CORE_SOURCES EXCLUDE REGEX ".*/libraries/network/.*")
+# Exclude old filesys directory (conflicts with file_sys/fs.h HandleTable)
+list(FILTER CORE_SOURCES EXCLUDE REGEX ".*/core/filesys/.*")
 
 file(GLOB APP_SOURCES
     ${LAYRA_ROOT}/src/*.cpp
