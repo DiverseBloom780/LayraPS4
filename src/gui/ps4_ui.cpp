@@ -1,14 +1,16 @@
-// ps4_ui.cpp - Authentic PS4 Dashboard UI
-// Place this in: src/gui/ps4_ui.cpp
 // SPDX-FileCopyrightText: Copyright 2025 LayraPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "ps4_ui.h"
+#include "settings_ui.h"
 #include "imgui.h"
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <ctime>
+#include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -17,8 +19,10 @@ namespace Gui {
 // Application/Game tile data
 struct AppTile {
   std::string name;
-  std::string icon; // Future: actual icon path
+  std::string icon;     // Future: actual icon path
+  std::string exe_path; // Path to eboot.bin or executable
   bool installed;
+  bool is_game;     // true = discovered game, false = system utility
   float hover_anim; // Animation value 0.0-1.0
 };
 
@@ -29,22 +33,120 @@ static float scroll_offset = 0.0f;
 static float scroll_target = 0.0f;
 static std::vector<AppTile> apps;
 static bool show_function_menu = false;
+static std::string games_directory;
+static bool s_game_running = false;
+static Gui::LaunchCallback s_launch_callback;
 
 // Animation state
 static float menu_fade = 0.0f;
 static float time_accumulator = 0.0f;
 
+static std::string FindGameIconPath(const std::filesystem::path &game_root) {
+  namespace fs = std::filesystem;
+  fs::path icon_file = game_root / "sce_sys" / "icon0.png";
+  if (fs::is_regular_file(icon_file)) {
+    return icon_file.string();
+  }
+  return {};
+}
+
+void PS4UI::SetGamesDirectory(const std::string &path) {
+  games_directory = path;
+  printf("[PS4UI] Games directory set to: %s\n", path.c_str());
+}
+
+void PS4UI::SetLaunchCallback(LaunchCallback callback) {
+  s_launch_callback = std::move(callback);
+}
+
+bool PS4UI::IsGameRunning() {
+  return s_game_running;
+}
+
+void PS4UI::ScanGamesDirectory() {
+  namespace fs = std::filesystem;
+
+  if (games_directory.empty()) {
+    printf("[PS4UI] No games directory configured\n");
+    return;
+  }
+
+  if (!fs::exists(games_directory) || !fs::is_directory(games_directory)) {
+    printf("[PS4UI] Games directory does not exist: %s\n",
+           games_directory.c_str());
+    return;
+  }
+
+  printf("[PS4UI] Scanning for games in: %s\n", games_directory.c_str());
+  int found = 0;
+
+  std::error_code ec;
+  for (const auto &entry :
+       fs::recursive_directory_iterator(games_directory, ec)) {
+    if (!entry.is_regular_file())
+      continue;
+
+    auto filename = entry.path().filename().string();
+    // Look for eboot.bin (PS4 game executable) or .elf files
+    if (filename == "eboot.bin" || entry.path().extension() == ".elf" ||
+        entry.path().extension() == ".self") {
+
+      // Use parent directory name as game title
+      std::string game_name = entry.path().parent_path().filename().string();
+      std::string exe = entry.path().string();
+      std::string icon = FindGameIconPath(entry.path().parent_path());
+
+      // Avoid duplicates
+      bool exists = false;
+      for (const auto &app : apps) {
+        if (app.exe_path == exe) {
+          exists = true;
+          break;
+        }
+      }
+      if (exists)
+        continue;
+
+      apps.push_back({game_name, icon, exe, true, true, 0.0f});
+      printf("[PS4UI]   Found: %s -> %s\n", game_name.c_str(), exe.c_str());
+      if (!icon.empty()) {
+        printf("[PS4UI]     Icon: %s\n", icon.c_str());
+      }
+      found++;
+    }
+  }
+
+  printf("[PS4UI] Scan complete: %d game(s) found\n", found);
+}
+
 // Initialize PS4 UI
 void PS4UI::Initialize() {
-  // Add some default PS4 apps/games
+  // Load saved settings first
+  SettingsUI::LoadSettings();
+
+  // Apply games directory from settings
+  const auto& settings = SettingsUI::GetSettings();
+  if (!settings.games_directory.empty()) {
+    games_directory = settings.games_directory;
+  }
+
+  // Add default PS4 system utilities
   apps = {
-      {"What's New", "", true, 0.0f},        {"TV & Video", "", true, 0.0f},
-      {"Browser", "", true, 0.0f},           {"Library", "", true, 0.0f},
-      {"Settings", "", true, 0.0f},          {"Power", "", true, 0.0f},
-      {"Bloodborne", "", true, 0.0f},        {"The Last of Us", "", true, 0.0f},
-      {"God of War", "", true, 0.0f},        {"Spider-Man", "", true, 0.0f},
-      {"Horizon Zero Dawn", "", true, 0.0f}, {"Uncharted 4", "", true, 0.0f},
+      {"What's New", "", "", true, false, 0.0f},
+      {"TV & Video", "", "", true, false, 0.0f},
+      {"Browser", "", "", true, false, 0.0f},
+      {"Library", "", "", true, false, 0.0f},
+      {"Settings", "", "", true, false, 0.0f},
   };
+
+  // Scan for games if directory is set
+  ScanGamesDirectory();
+
+  // If no games found, add placeholder entries
+  if (std::none_of(apps.begin(), apps.end(),
+                   [](const AppTile &a) { return a.is_game; })) {
+    apps.push_back({"No Games Found", "", "", false, true, 0.0f});
+  }
 
   selected_app = 0;
   selected_menu = -1;
@@ -107,6 +209,11 @@ void PS4UI::Render() {
 
   // Selection info at bottom
   RenderSelectionInfo(draw_list, screen_size);
+
+  // Render Settings dialog on top if open
+  if (SettingsUI::IsOpen()) {
+    SettingsUI::Render();
+  }
 
   ImGui::End();
   ImGui::PopStyleVar(2);
@@ -207,10 +314,23 @@ void PS4UI::RenderAppsRow(ImDrawList *draw_list, ImVec2 screen_size,
     }
 
     // App icon placeholder (would be actual icon)
+    ImU32 icon_color = apps[i].icon.empty()
+                         ? IM_COL32(190, 190, 190, 180)
+                         : IM_COL32(100, 200, 255, 220);
     ImVec2 icon_pos(tile_pos.x + current_size * 0.5f,
                     tile_pos.y + current_size * 0.4f);
-    draw_list->AddCircleFilled(icon_pos, current_size * 0.25f,
-                               IM_COL32(200, 200, 200, 180), 32);
+    draw_list->AddCircleFilled(icon_pos, current_size * 0.25f, icon_color,
+                               32);
+
+    // Icon indicator for loaded game icons
+    if (!apps[i].icon.empty()) {
+      ImVec2 badge_pos(tile_pos.x + current_size - 14,
+                       tile_pos.y + 10);
+      draw_list->AddCircleFilled(badge_pos, 8.0f, IM_COL32(255, 255, 255, 220),
+                                 16);
+      draw_list->AddCircleFilled(badge_pos, 5.5f, IM_COL32(20, 110, 220, 255),
+                                 16);
+    }
 
     // App name
     ImVec2 text_size = ImGui::CalcTextSize(apps[i].name.c_str());
@@ -325,9 +445,20 @@ void PS4UI::HandleInput() {
 
   if (ImGui::IsKeyPressed(ImGuiKey_Enter) ||
       ImGui::IsKeyPressed(ImGuiKey_Space)) {
-    if (selected_menu == -1 && selected_app >= 0) {
+    if (selected_menu == -1 && selected_app >= 0 &&
+        selected_app < static_cast<int>(apps.size())) {
       // Launch selected app
       printf("[PS4UI] Launching: %s\n", apps[selected_app].name.c_str());
+      if (apps[selected_app].name == "Settings") {
+        SettingsUI::Open();
+      } else if (apps[selected_app].is_game && !apps[selected_app].exe_path.empty()) {
+        printf("[PS4UI]   Executable: %s\n",
+               apps[selected_app].exe_path.c_str());
+        if (s_launch_callback) {
+          s_game_running = true;
+          s_launch_callback(apps[selected_app].exe_path);
+        }
+      }
     } else if (selected_menu >= 0) {
       // Execute menu action
       printf("[PS4UI] Menu action: %d\n", selected_menu);

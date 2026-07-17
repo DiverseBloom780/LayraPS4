@@ -1,15 +1,50 @@
 
 #include "layra_vulkan.h"
 #include <algorithm>
+#include <cstdarg>
+#include <cstring>
 #include <set>
 #include <string>
 #include <vector>
-
-#ifdef NDEBUG
-const bool enableValidationLayers = false;
-#else
-const bool enableValidationLayers = true;
+#include <cstdlib>
+#ifdef _WIN32
+#include <windows.h>
 #endif
+
+static std::string g_last_vulkan_error;
+
+const char *layra_vulkan_get_last_error() {
+  return g_last_vulkan_error.c_str();
+}
+
+static void set_vulkan_error(const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  char buffer[2048];
+  vsnprintf(buffer, sizeof(buffer), fmt, args);
+  va_end(args);
+  g_last_vulkan_error = buffer;
+}
+
+// Runtime-configurable validation layers toggle.
+// Set environment variable LAYRA_DISABLE_VK_VALIDATION=1 (or true) to disable.
+const bool enableValidationLayers = []() -> bool {
+#ifdef NDEBUG
+  bool defaultVal = false;
+#else
+  bool defaultVal = true;
+#endif
+  const char *env = std::getenv("LAYRA_DISABLE_VK_VALIDATION");
+  if (env) {
+    if (env[0] == '1' || strcmp(env, "true") == 0 || strcmp(env, "TRUE") == 0) {
+      return false;
+    }
+    if (env[0] == '0' || strcmp(env, "false") == 0 || strcmp(env, "FALSE") == 0) {
+      return defaultVal;
+    }
+  }
+  return defaultVal;
+}();
 
 const std::vector<const char *> validationLayers = {
     "VK_LAYER_KHRONOS_validation"};
@@ -74,6 +109,7 @@ bool checkValidationLayerSupport() {
 }
 
 bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
+  fprintf(stderr, "[Vulkan] layra_vulkan_init() start\n");
   // Initialize all function pointers to null
   memset(context, 0, sizeof(LayraVulkanContext));
 
@@ -86,18 +122,131 @@ bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
   appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
   appInfo.apiVersion = VK_API_VERSION_1_0;
 
+  fprintf(stderr, "[Vulkan] Loading Vulkan library...\n");
+  if (SDL_Vulkan_LoadLibrary(NULL) != 0) {
+    const char *sdl_error = SDL_GetError();
+    fprintf(stderr, "Failed to load Vulkan library: %s\n", sdl_error);
+    set_vulkan_error("Failed to load Vulkan library: %s", sdl_error);
+#ifdef _WIN32
+    DWORD err = GetLastError();
+    if (err != 0) {
+      LPVOID msgBuf = NULL;
+      FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                     NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&msgBuf, 0, NULL);
+      if (msgBuf) {
+        fprintf(stderr, "GetLastError: %u (%s)\n", (unsigned)err, (char *)msgBuf);
+        set_vulkan_error("%s\nGetLastError: %u (%s)", g_last_vulkan_error.c_str(), (unsigned)err, (char *)msgBuf);
+        LocalFree(msgBuf);
+      } else {
+        fprintf(stderr, "GetLastError: %u\n", (unsigned)err);
+        set_vulkan_error("%s\nGetLastError: %u", g_last_vulkan_error.c_str(), (unsigned)err);
+      }
+    }
+
+    bool loadedVulkan = false;
+    const char *vulkan_sdk = std::getenv("VULKAN_SDK");
+    if (vulkan_sdk) {
+      std::string loaderPath = std::string(vulkan_sdk) + "\\Bin\\vulkan-1.dll";
+      fprintf(stderr, "[Vulkan] Trying explicit loader path: %s\n", loaderPath.c_str());
+      if (SDL_Vulkan_LoadLibrary(loaderPath.c_str()) == 0) {
+        fprintf(stderr, "[Vulkan] Successfully loaded Vulkan library from VULKAN_SDK path.\n");
+        loadedVulkan = true;
+      } else {
+        fprintf(stderr, "[Vulkan] Explicit loader path failed: %s\n", SDL_GetError());
+        set_vulkan_error("%s\nExplicit Vulkan loader path failed: %s", g_last_vulkan_error.c_str(), SDL_GetError());
+      }
+    }
+
+    if (!loadedVulkan) {
+      constexpr const char *systemLoaderPath = "C:\\Windows\\System32\\vulkan-1.dll";
+      fprintf(stderr, "[Vulkan] Trying explicit system loader path: %s\n", systemLoaderPath);
+      if (SDL_Vulkan_LoadLibrary(systemLoaderPath) == 0) {
+        fprintf(stderr, "[Vulkan] Successfully loaded Vulkan library from system path.\n");
+        loadedVulkan = true;
+      } else {
+        fprintf(stderr, "[Vulkan] System loader path failed: %s\n", SDL_GetError());
+        set_vulkan_error("%s\nSystem Vulkan loader path failed: %s", g_last_vulkan_error.c_str(), SDL_GetError());
+      }
+    }
+
+    if (!loadedVulkan) {
+      fprintf(stderr, "[Vulkan] Trying dynamic loader name vulkan-1.dll\n");
+      if (SDL_Vulkan_LoadLibrary("vulkan-1.dll") == 0) {
+        fprintf(stderr, "[Vulkan] Successfully loaded Vulkan library via system search path.\n");
+        loadedVulkan = true;
+      } else {
+        fprintf(stderr, "[Vulkan] System search path load failed: %s\n", SDL_GetError());
+        set_vulkan_error("%s\nSystem search path load failed: %s", g_last_vulkan_error.c_str(), SDL_GetError());
+      }
+    }
+
+    if (!loadedVulkan) {
+      HMODULE h2 = LoadLibraryExA("vulkan-1.dll", NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+      if (h2) {
+        fprintf(stderr, "LoadLibraryExA(vulkan-1.dll) succeeded.\n");
+        FreeLibrary(h2);
+      } else {
+        DWORD le2 = GetLastError();
+        LPVOID msgBuf3 = NULL;
+        FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                       NULL, le2, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&msgBuf3, 0, NULL);
+        if (msgBuf3) {
+          fprintf(stderr, "LoadLibraryExA(vulkan-1.dll) failed -> %u (%s)\n", (unsigned)le2, (char *)msgBuf3);
+          set_vulkan_error("%s\nLoadLibraryExA(vulkan-1.dll) failed -> %u (%s)", g_last_vulkan_error.c_str(), (unsigned)le2, (char *)msgBuf3);
+          LocalFree(msgBuf3);
+        } else {
+          fprintf(stderr, "LoadLibraryExA(vulkan-1.dll) failed -> %u\n", (unsigned)le2);
+          set_vulkan_error("%s\nLoadLibraryExA(vulkan-1.dll) failed -> %u", g_last_vulkan_error.c_str(), (unsigned)le2);
+        }
+      }
+    }
+
+    if (!loadedVulkan) {
+      return false;
+    }
+#else
+    return false;
+#endif
+  }
+  fprintf(stderr, "[Vulkan] Loaded Vulkan library.\n");
+
   Uint32 extensions_count = 0;
+  fprintf(stderr, "[Vulkan] Querying SDL instance extensions...\n");
   char const *const *extensions_names =
       SDL_Vulkan_GetInstanceExtensions(&extensions_count);
   if (!extensions_names) {
-    fprintf(stderr, "Failed to get instance extensions.\n");
+    fprintf(stderr, "Failed to get instance extensions: %s\n",
+            SDL_GetError());
     return false;
   }
-  std::vector<const char *> extensions(extensions_names,
-                                       extensions_names + extensions_count);
+  if (extensions_count == 0) {
+    fprintf(stderr, "SDL returned zero Vulkan instance extensions!\n");
+    return false;
+  }
+
+  std::vector<const char *> extensions;
+  extensions.reserve(extensions_count + 1);
+  for (Uint32 index = 0; index < extensions_count; index++) {
+    extensions.push_back(extensions_names[index]);
+  }
+
+  auto addInstanceExtension = [&](const char *name) {
+    for (const char *existing : extensions) {
+      if (strcmp(existing, name) == 0) {
+        return;
+      }
+    }
+    extensions.push_back(name);
+  };
 
   if (enableValidationLayers) {
-    extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    addInstanceExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+  }
+
+  fprintf(stderr, "[Vulkan] Requested instance extensions (%zu):\n",
+          extensions.size());
+  for (const char *ext : extensions) {
+    fprintf(stderr, "  %s\n", ext);
   }
 
   VkInstanceCreateInfo createInfo = {};
@@ -133,11 +282,13 @@ bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
     createInfo.pNext = nullptr;
   }
 
+  fprintf(stderr, "[Vulkan] Creating Vulkan instance...\n");
   if (vkCreateInstance(&createInfo, nullptr, &context->instance) !=
       VK_SUCCESS) {
     fprintf(stderr, "Failed to create Vulkan instance!\n");
     return false;
   }
+  fprintf(stderr, "[Vulkan] Vulkan instance created successfully.\n");
 
   if (enableValidationLayers) {
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo = {};
@@ -161,11 +312,14 @@ bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
   }
 
   // 3. Create Surface
+  fprintf(stderr, "[Vulkan] Creating Vulkan surface...\n");
   if (!SDL_Vulkan_CreateSurface(window, context->instance, nullptr,
                                 &context->surface)) {
-    fprintf(stderr, "Failed to create Vulkan surface!\n");
+    fprintf(stderr, "Failed to create Vulkan surface: %s\n",
+            SDL_GetError());
     return false;
   }
+  fprintf(stderr, "[Vulkan] Surface created successfully.\n");
 
   // 4. Pick Physical Device
   uint32_t physicalDeviceCount = 0;
@@ -184,15 +338,13 @@ bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
     VkPhysicalDeviceFeatures deviceFeatures;
     vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
 
-    // For now, just pick the first discrete GPU or any GPU if discrete is not
-    // found
     if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
         deviceFeatures.geometryShader) {
       context->physicalDevice = device;
       break;
     }
     if (context->physicalDevice == VK_NULL_HANDLE) {
-      context->physicalDevice = device; // Fallback to any GPU
+      context->physicalDevice = device;
     }
   }
 
@@ -202,6 +354,7 @@ bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
   }
 
   // 5. Find Queue Families
+  context->graphicsQueueFamilyIndex = UINT32_MAX;
   uint32_t queueFamilyCount = 0;
   vkGetPhysicalDeviceQueueFamilyProperties(context->physicalDevice,
                                            &queueFamilyCount, nullptr);
@@ -209,21 +362,22 @@ bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
   vkGetPhysicalDeviceQueueFamilyProperties(
       context->physicalDevice, &queueFamilyCount, queueFamilies.data());
 
-  int i = 0;
+  uint32_t queueFamilyIndex = 0;
   for (const auto &queueFamily : queueFamilies) {
     if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
       VkBool32 presentSupport = false;
-      vkGetPhysicalDeviceSurfaceSupportKHR(context->physicalDevice, i,
+      vkGetPhysicalDeviceSurfaceSupportKHR(context->physicalDevice,
+                                           queueFamilyIndex,
                                            context->surface, &presentSupport);
       if (presentSupport) {
-        context->graphicsQueueFamilyIndex = i;
+        context->graphicsQueueFamilyIndex = queueFamilyIndex;
         break;
       }
     }
-    i++;
+    queueFamilyIndex++;
   }
 
-  if (context->graphicsQueueFamilyIndex == (uint32_t)-1) {
+  if (context->graphicsQueueFamilyIndex == UINT32_MAX) {
     fprintf(stderr, "Failed to find a suitable graphics queue family!\n");
     return false;
   }
@@ -237,14 +391,11 @@ bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
   queueCreateInfo.pQueuePriorities = &queuePriority;
 
   VkPhysicalDeviceFeatures deviceFeatures = {};
-  // Enable any required features here
-
   VkDeviceCreateInfo deviceCreateInfo = {};
   deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
   deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
   deviceCreateInfo.queueCreateInfoCount = 1;
   deviceCreateInfo.pEnabledFeatures = &deviceFeatures;
-
   deviceCreateInfo.enabledExtensionCount =
       static_cast<uint32_t>(deviceExtensions.size());
   deviceCreateInfo.ppEnabledExtensionNames = deviceExtensions.data();
@@ -263,8 +414,12 @@ bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
     return false;
   }
 
+  fprintf(stderr, "[Vulkan] Logical device created: %p\n",
+          reinterpret_cast<void *>(context->device));
   vkGetDeviceQueue(context->device, context->graphicsQueueFamilyIndex, 0,
                    &context->graphicsQueue);
+  fprintf(stderr, "[Vulkan] Graphics queue handle: %p\n",
+          reinterpret_cast<void *>(context->graphicsQueue));
 
   // 7. Create Swapchain (minimal implementation for now)
   VkSurfaceCapabilitiesKHR capabilities;
@@ -272,30 +427,59 @@ bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
                                             context->surface, &capabilities);
 
   uint32_t formatCount;
-  vkGetPhysicalDeviceSurfaceFormatsKHR(context->physicalDevice,
-                                       context->surface, &formatCount, nullptr);
+  if (vkGetPhysicalDeviceSurfaceFormatsKHR(context->physicalDevice,
+                                           context->surface, &formatCount,
+                                           nullptr) != VK_SUCCESS) {
+    fprintf(stderr, "Failed to query surface formats!\n");
+    return false;
+  }
+  if (formatCount == 0) {
+    fprintf(stderr, "No surface formats available for the Vulkan surface!\n");
+    return false;
+  }
+
   std::vector<VkSurfaceFormatKHR> surfaceFormats(formatCount);
-  vkGetPhysicalDeviceSurfaceFormatsKHR(context->physicalDevice,
-                                       context->surface, &formatCount,
-                                       surfaceFormats.data());
+  if (vkGetPhysicalDeviceSurfaceFormatsKHR(context->physicalDevice,
+                                           context->surface, &formatCount,
+                                           surfaceFormats.data()) != VK_SUCCESS) {
+    fprintf(stderr, "Failed to retrieve surface formats!\n");
+    return false;
+  }
 
   VkSurfaceFormatKHR surfaceFormat = surfaceFormats[0];
-  for (const auto &availableFormat : surfaceFormats) {
-    if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
-        availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-      surfaceFormat = availableFormat;
-      break;
+  if (surfaceFormat.format == VK_FORMAT_UNDEFINED) {
+    surfaceFormat.format = VK_FORMAT_B8G8R8A8_SRGB;
+    surfaceFormat.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+  } else {
+    for (const auto &availableFormat : surfaceFormats) {
+      if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
+          availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        surfaceFormat = availableFormat;
+        break;
+      }
     }
   }
   context->swapChainImageFormat = surfaceFormat.format;
 
   uint32_t presentModeCount;
-  vkGetPhysicalDeviceSurfacePresentModesKHR(
-      context->physicalDevice, context->surface, &presentModeCount, nullptr);
+  if (vkGetPhysicalDeviceSurfacePresentModesKHR(
+          context->physicalDevice, context->surface, &presentModeCount,
+          nullptr) != VK_SUCCESS) {
+    fprintf(stderr, "Failed to query present modes!\n");
+    return false;
+  }
+  if (presentModeCount == 0) {
+    fprintf(stderr, "No present modes available for the Vulkan surface!\n");
+    return false;
+  }
+
   std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-  vkGetPhysicalDeviceSurfacePresentModesKHR(context->physicalDevice,
-                                            context->surface, &presentModeCount,
-                                            presentModes.data());
+  if (vkGetPhysicalDeviceSurfacePresentModesKHR(context->physicalDevice,
+                                                context->surface, &presentModeCount,
+                                                presentModes.data()) != VK_SUCCESS) {
+    fprintf(stderr, "Failed to retrieve present modes!\n");
+    return false;
+  }
 
   VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
   for (const auto &availablePresentMode : presentModes) {
@@ -323,6 +507,17 @@ bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
   }
   context->imageCount = imageCount;
 
+  VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+  if (!(capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)) {
+    if (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) {
+      compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+    } else if (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) {
+      compositeAlpha = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
+    } else if (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR) {
+      compositeAlpha = VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR;
+    }
+  }
+
   VkSwapchainCreateInfoKHR swapchainCreateInfo = {};
   swapchainCreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
   swapchainCreateInfo.surface = context->surface;
@@ -334,7 +529,7 @@ bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
   swapchainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
   swapchainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
   swapchainCreateInfo.preTransform = capabilities.currentTransform;
-  swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+  swapchainCreateInfo.compositeAlpha = compositeAlpha;
   swapchainCreateInfo.presentMode = presentMode;
   swapchainCreateInfo.clipped = VK_TRUE;
   swapchainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
@@ -418,6 +613,8 @@ bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
     fprintf(stderr, "Failed to create render pass!\n");
     return false;
   }
+  fprintf(stderr, "[Vulkan] Render pass created: %p\n",
+          reinterpret_cast<void *>(context->renderPass));
 
   // 9. Create Framebuffers
   context->swapChainFramebuffers =
@@ -468,7 +665,7 @@ bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
     return false;
   }
 
-  // 12. Create Semaphores and Fences
+  // 12. Create Per-Frame Semaphores and Fences
   VkSemaphoreCreateInfo semaphoreInfo = {};
   semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -476,16 +673,31 @@ bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window) {
   fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
   fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-  if (vkCreateSemaphore(context->device, &semaphoreInfo, nullptr,
-                        &context->imageAvailableSemaphore) != VK_SUCCESS ||
-      vkCreateSemaphore(context->device, &semaphoreInfo, nullptr,
-                        &context->renderFinishedSemaphore) != VK_SUCCESS ||
-      vkCreateFence(context->device, &fenceInfo, nullptr,
-                    &context->inFlightFence) != VK_SUCCESS) {
-    fprintf(stderr, "Failed to create semaphores or fence!\n");
-    return false;
+  context->currentFrame = 0;
+  for (uint32_t i = 0; i < LAYRA_MAX_FRAMES_IN_FLIGHT; i++) {
+    if (vkCreateSemaphore(context->device, &semaphoreInfo, nullptr,
+                          &context->imageAvailableSemaphores[i]) != VK_SUCCESS ||
+        vkCreateSemaphore(context->device, &semaphoreInfo, nullptr,
+                          &context->renderFinishedSemaphores[i]) != VK_SUCCESS ||
+        vkCreateFence(context->device, &fenceInfo, nullptr,
+                      &context->inFlightFences[i]) != VK_SUCCESS) {
+      fprintf(stderr, "Failed to create per-frame sync objects!\n");
+      return false;
+    }
   }
+  context->imageAvailableSemaphore = context->imageAvailableSemaphores[0];
+  context->renderFinishedSemaphore = context->renderFinishedSemaphores[0];
+  context->inFlightFence = context->inFlightFences[0];
 
+  fprintf(stderr, "[Vulkan] Final init state: device=%p physicalDevice=%p queue=%p queueFamily=%u surface=%p swapchain=%p renderPass=%p imageCount=%u\n",
+          reinterpret_cast<void *>(context->device),
+          reinterpret_cast<void *>(context->physicalDevice),
+          reinterpret_cast<void *>(context->graphicsQueue),
+          context->graphicsQueueFamilyIndex,
+          reinterpret_cast<void *>(context->surface),
+          reinterpret_cast<void *>(context->swapchain),
+          reinterpret_cast<void *>(context->renderPass),
+          context->imageCount);
   fprintf(stdout, "Vulkan initialized successfully.\n");
   return true;
 }
@@ -525,22 +737,39 @@ bool layra_vulkan_recreate_swapchain(LayraVulkanContext *context,
                                        surfaceFormats.data());
 
   VkSurfaceFormatKHR surfaceFormat = surfaceFormats[0];
-  for (const auto &availableFormat : surfaceFormats) {
-    if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
-        availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-      surfaceFormat = availableFormat;
-      break;
+  if (surfaceFormat.format == VK_FORMAT_UNDEFINED) {
+    surfaceFormat.format = VK_FORMAT_B8G8R8A8_SRGB;
+    surfaceFormat.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+  } else {
+    for (const auto &availableFormat : surfaceFormats) {
+      if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
+          availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        surfaceFormat = availableFormat;
+        break;
+      }
     }
   }
   context->swapChainImageFormat = surfaceFormat.format;
 
   uint32_t presentModeCount;
-  vkGetPhysicalDeviceSurfacePresentModesKHR(
-      context->physicalDevice, context->surface, &presentModeCount, nullptr);
+  if (vkGetPhysicalDeviceSurfacePresentModesKHR(
+          context->physicalDevice, context->surface, &presentModeCount,
+          nullptr) != VK_SUCCESS) {
+    fprintf(stderr, "Failed to query present modes!\n");
+    return false;
+  }
+  if (presentModeCount == 0) {
+    fprintf(stderr, "No present modes available for the Vulkan surface!\n");
+    return false;
+  }
+
   std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-  vkGetPhysicalDeviceSurfacePresentModesKHR(context->physicalDevice,
-                                            context->surface, &presentModeCount,
-                                            presentModes.data());
+  if (vkGetPhysicalDeviceSurfacePresentModesKHR(context->physicalDevice,
+                                                context->surface, &presentModeCount,
+                                                presentModes.data()) != VK_SUCCESS) {
+    fprintf(stderr, "Failed to retrieve present modes!\n");
+    return false;
+  }
 
   VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
   for (const auto &availablePresentMode : presentModes) {
@@ -566,7 +795,19 @@ bool layra_vulkan_recreate_swapchain(LayraVulkanContext *context,
       imageCount > capabilities.maxImageCount) {
     imageCount = capabilities.maxImageCount;
   }
+  uint32_t oldImageCount = context->imageCount;
   context->imageCount = imageCount;
+
+  VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+  if (!(capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR)) {
+    if (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) {
+      compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+    } else if (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) {
+      compositeAlpha = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
+    } else if (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR) {
+      compositeAlpha = VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR;
+    }
+  }
 
   VkSwapchainCreateInfoKHR swapchainCreateInfo = {};
   swapchainCreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -579,7 +820,7 @@ bool layra_vulkan_recreate_swapchain(LayraVulkanContext *context,
   swapchainCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
   swapchainCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
   swapchainCreateInfo.preTransform = capabilities.currentTransform;
-  swapchainCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+  swapchainCreateInfo.compositeAlpha = compositeAlpha;
   swapchainCreateInfo.presentMode = presentMode;
   swapchainCreateInfo.clipped = VK_TRUE;
   swapchainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
@@ -650,7 +891,7 @@ bool layra_vulkan_recreate_swapchain(LayraVulkanContext *context,
   // Reallocate command buffers if imageCount changed
   if (context->commandBuffers) {
     vkFreeCommandBuffers(context->device, context->commandPool,
-                         context->imageCount, context->commandBuffers);
+                         oldImageCount, context->commandBuffers);
     free(context->commandBuffers);
   }
   context->commandBuffers =
@@ -672,24 +913,24 @@ bool layra_vulkan_recreate_swapchain(LayraVulkanContext *context,
 
 void layra_vulkan_render_frame(LayraVulkanContext *context,
                                void (*draw_callback)(VkCommandBuffer)) {
-  vkWaitForFences(context->device, 1, &context->inFlightFence, VK_TRUE,
-                  UINT64_MAX);
+  uint32_t frame = context->currentFrame;
+
+  vkWaitForFences(context->device, 1, &context->inFlightFences[frame],
+                  VK_TRUE, UINT64_MAX);
 
   uint32_t imageIndex;
   VkResult result = vkAcquireNextImageKHR(
       context->device, context->swapchain, UINT64_MAX,
-      context->imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+      context->imageAvailableSemaphores[frame], VK_NULL_HANDLE, &imageIndex);
 
   if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-    // Swapchain is out of date, recreate it
-    // For now, we will just return and let the main loop handle recreation
     return;
   } else if (result != VK_SUCCESS) {
     fprintf(stderr, "Failed to acquire swap chain image!\n");
     return;
   }
 
-  vkResetFences(context->device, 1, &context->inFlightFence);
+  vkResetFences(context->device, 1, &context->inFlightFences[frame]);
 
   VkCommandBuffer commandBuffer = context->commandBuffers[imageIndex];
   vkResetCommandBuffer(commandBuffer, 0);
@@ -723,7 +964,6 @@ void layra_vulkan_render_frame(LayraVulkanContext *context,
   vkCmdBeginRenderPass(commandBuffer, &renderPassInfo,
                        VK_SUBPASS_CONTENTS_INLINE);
 
-  // Call the draw callback for ImGui or other emulator rendering
   if (draw_callback) {
     draw_callback(commandBuffer);
   }
@@ -740,16 +980,16 @@ void layra_vulkan_render_frame(LayraVulkanContext *context,
   VkSubmitInfo submitInfo = {
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
       .waitSemaphoreCount = 1,
-      .pWaitSemaphores = &context->imageAvailableSemaphore,
+      .pWaitSemaphores = &context->imageAvailableSemaphores[frame],
       .pWaitDstStageMask = &colorAttachmentOutputStage,
       .commandBufferCount = 1,
       .pCommandBuffers = &commandBuffer,
       .signalSemaphoreCount = 1,
-      .pSignalSemaphores = &context->renderFinishedSemaphore,
+      .pSignalSemaphores = &context->renderFinishedSemaphores[frame],
   };
 
   if (vkQueueSubmit(context->graphicsQueue, 1, &submitInfo,
-                    context->inFlightFence) != VK_SUCCESS) {
+                    context->inFlightFences[frame]) != VK_SUCCESS) {
     fprintf(stderr, "Failed to submit draw command buffer!\n");
     return;
   }
@@ -757,7 +997,7 @@ void layra_vulkan_render_frame(LayraVulkanContext *context,
   VkPresentInfoKHR presentInfo = {
       .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
       .waitSemaphoreCount = 1,
-      .pWaitSemaphores = &context->renderFinishedSemaphore,
+      .pWaitSemaphores = &context->renderFinishedSemaphores[frame],
       .swapchainCount = 1,
       .pSwapchains = &context->swapchain,
       .pImageIndices = &imageIndex,
@@ -766,23 +1006,25 @@ void layra_vulkan_render_frame(LayraVulkanContext *context,
 
   result = vkQueuePresentKHR(context->graphicsQueue, &presentInfo);
   if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-    // Swapchain is out of date or suboptimal, recreate it
-    // For now, we will just return and let the main loop handle recreation
     return;
   } else if (result != VK_SUCCESS) {
     fprintf(stderr, "Failed to present swap chain image!\n");
     return;
   }
+
+  context->currentFrame = (frame + 1) % LAYRA_MAX_FRAMES_IN_FLIGHT;
 }
 
 void layra_vulkan_cleanup(LayraVulkanContext *context) {
   layra_vulkan_cleanup_swapchain(context);
 
-  vkDestroySemaphore(context->device, context->renderFinishedSemaphore,
-                     nullptr);
-  vkDestroySemaphore(context->device, context->imageAvailableSemaphore,
-                     nullptr);
-  vkDestroyFence(context->device, context->inFlightFence, nullptr);
+  for (uint32_t i = 0; i < LAYRA_MAX_FRAMES_IN_FLIGHT; i++) {
+    vkDestroySemaphore(context->device, context->renderFinishedSemaphores[i],
+                       nullptr);
+    vkDestroySemaphore(context->device, context->imageAvailableSemaphores[i],
+                       nullptr);
+    vkDestroyFence(context->device, context->inFlightFences[i], nullptr);
+  }
 
   vkFreeCommandBuffers(context->device, context->commandPool,
                        context->imageCount, context->commandBuffers);

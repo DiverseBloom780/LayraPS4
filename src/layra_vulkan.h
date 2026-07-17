@@ -12,8 +12,11 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-// Forward declaration for debug messenger
+// Forward declarations
 typedef struct VkDebugUtilsMessengerEXT_T *VkDebugUtilsMessengerEXT;
+typedef struct VkCommandBuffer_T *VkCommandBuffer;
+
+#define LAYRA_MAX_FRAMES_IN_FLIGHT 3
 
 typedef struct {
   VkInstance instance;
@@ -33,16 +36,25 @@ typedef struct {
   VkFramebuffer *swapChainFramebuffers;
   VkCommandPool commandPool;
   VkCommandBuffer *commandBuffers;
+
+  // Per-frame synchronization (one set per swapchain image)
+  VkSemaphore imageAvailableSemaphores[LAYRA_MAX_FRAMES_IN_FLIGHT];
+  VkSemaphore renderFinishedSemaphores[LAYRA_MAX_FRAMES_IN_FLIGHT];
+  VkFence inFlightFences[LAYRA_MAX_FRAMES_IN_FLIGHT];
+  uint32_t currentFrame;
+
+  // Legacy single semaphore fields (kept for backward compat during init)
   VkSemaphore imageAvailableSemaphore;
   VkSemaphore renderFinishedSemaphore;
   VkFence inFlightFence;
-
-  // Vulkan function pointers for dynamic loading
 
 } LayraVulkanContext;
 
 // Initialize Vulkan context
 bool layra_vulkan_init(LayraVulkanContext *context, SDL_Window *window);
+
+// Get the last Vulkan initialization error message.
+const char *layra_vulkan_get_last_error();
 
 // Recreate swapchain and related resources (e.g., on window resize)
 bool layra_vulkan_recreate_swapchain(LayraVulkanContext *context,

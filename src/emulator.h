@@ -52,6 +52,9 @@ public:
   // Run the emulator
   void Run();
 
+  // Set the Vulkan context for the graphics backend
+  void SetVulkanContext(void* device, void* physDevice, void* gfxQueue, uint32_t queueFamily, void* renderPass, uint32_t width, uint32_t height);
+
   // Pause the emulator
   void Pause();
 
