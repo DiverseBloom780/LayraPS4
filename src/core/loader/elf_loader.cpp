@@ -15,14 +15,11 @@ static uint64_t PS4_SYSV_ABI GenericHleStub() {
   return 0;
 }
 
-static uint64_t GetWrappedGenericStub() {
+static uint64_t GetNamedStub(const char* name) {
   static Core::AbiWrapperManager wrapper_manager;
-  static uint64_t wrapped_stub = 0;
-  if (wrapped_stub == 0) {
-    wrapped_stub = wrapper_manager.CreateWrapper(reinterpret_cast<uint64_t>(&GenericHleStub));
-  }
-  return wrapped_stub;
+  return wrapper_manager.CreateNamedStub(name);
 }
+
 
 
 #include <cstddef>
@@ -752,13 +749,12 @@ bool ElfLoader::ApplyRelocations(const std::vector<uint8_t> &data,
           } else {
             // Stub unresolved imports with a trap instead of failing
             // This allows the game to progress further before hitting the stub
-            printf("[ElfLoader] WARNING: Unresolved import: %s (stubbed)\n", sym_name);
-            uint64_t stub_value = GetWrappedGenericStub();
+            uint64_t stub_value = GetNamedStub(sym_name);
             memory->Write(target_vaddr, &stub_value, sizeof(stub_value));
           }
         } else {
           // No module manager or empty name - stub it
-          uint64_t stub_value = GetWrappedGenericStub();
+          uint64_t stub_value = GetNamedStub(sym_name);
           memory->Write(target_vaddr, &stub_value, sizeof(stub_value));
         }
       }
