@@ -105,6 +105,25 @@ float internal_logf(float x) { return std::logf(x); }
 double internal_log10(double x) { return std::log10(x); }
 float internal_log10f(float x) { return std::log10f(x); }
 
+uint32_t internal_setjmp(void* env) {
+    printf("[libc] setjmp called\n");
+    return 0;
+}
+
+// C++ ABI guard functions
+int __cxa_guard_acquire(uint64_t* guard_object) {
+    uint8_t* guard = reinterpret_cast<uint8_t*>(guard_object);
+    if (*guard == 0) {
+        return 1; // Needs initialization
+    }
+    return 0; // Already initialized
+}
+
+void __cxa_guard_release(uint64_t* guard_object) {
+    uint8_t* guard = reinterpret_cast<uint8_t*>(guard_object);
+    *guard = 1; // Mark as initialized
+}
+
 #define LIB_FUNCTION(nid, library, version, module, function)                  \
   module_manager->RegisterHLEExport(module, nid, #function,                    \
                                     reinterpret_cast<uint64_t>(function));
@@ -195,6 +214,12 @@ void RegisterLibc(::Core::Kernel::ModuleManager *module_manager) {
                internal_log10);
   LIB_FUNCTION("lhpd6Wk6ccs", "libSceLibcInternal", 1, "libSceLibcInternal",
                internal_log10f);
+
+  // C++ ABI guard functions
+  LIB_FUNCTION("3GPpjQdAMTw", "libSceLibcInternal", 1, "libSceLibcInternal",
+               __cxa_guard_acquire);
+  LIB_FUNCTION("9rAeANT2tyE", "libSceLibcInternal", 1, "libSceLibcInternal",
+               __cxa_guard_release);
 
   printf("[libc] Registration complete.\n");
 }
