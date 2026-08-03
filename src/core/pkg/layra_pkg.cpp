@@ -125,7 +125,9 @@ bool layra_pkg_extract_file(FILE *pkg_file, const layra_pkg_entry_t *entry,
 }
 
 bool layra_pkg_extract_to_directory(const char *pkg_filepath,
-                                     const char *output_dir) {
+                                     const char *output_dir,
+                                     layra_pkg_progress_cb_t progress_cb,
+                                     void *userdata) {
   FILE *pkg_file = fopen(pkg_filepath, "rb");
   if (!pkg_file) {
     std::cerr << "Error opening PKG file " << pkg_filepath << "\n";
@@ -182,6 +184,11 @@ bool layra_pkg_extract_to_directory(const char *pkg_filepath,
       filename = std::string(filename_table.data() + entries[i].filename_offset);
     } else {
       filename = "file_" + std::to_string(i) + ".bin";
+    }
+
+    if (progress_cb) {
+      progress_cb(static_cast<int>(i + 1), static_cast<int>(header.pkg_file_count),
+                  filename.c_str(), userdata);
     }
 
     fs::path output_path = dest_dir / filename;
