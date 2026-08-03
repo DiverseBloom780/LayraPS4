@@ -108,6 +108,10 @@ bool layra_pkg_extract_file(FILE *pkg_file, const layra_pkg_entry_t *entry,
     return false;
   }
 
+  if (entry->size == 0) {
+    return true;
+  }
+
   if (fseek(pkg_file, entry->offset, SEEK_SET) != 0) {
     std::cerr << "Error seeking to file data in PKG.\n";
     return false;
@@ -177,7 +181,20 @@ bool layra_pkg_extract_to_directory(const char *pkg_filepath,
     return false;
   }
 
+  uint32_t payload_entries = 0;
   for (uint32_t i = 0; i < header.pkg_file_count; ++i) {
+    if (entries[i].offset == 0 && entries[i].size == 0) {
+      continue;
+    }
+    payload_entries++;
+  }
+
+  uint32_t extracted = 0;
+  for (uint32_t i = 0; i < header.pkg_file_count; ++i) {
+    if (entries[i].offset == 0 && entries[i].size == 0) {
+      continue;
+    }
+
     std::string filename;
     if (!filename_table.empty() &&
         entries[i].filename_offset < filename_table.size()) {
@@ -187,7 +204,7 @@ bool layra_pkg_extract_to_directory(const char *pkg_filepath,
     }
 
     if (progress_cb) {
-      progress_cb(static_cast<int>(i + 1), static_cast<int>(header.pkg_file_count),
+      progress_cb(static_cast<int>(extracted + 1), static_cast<int>(payload_entries),
                   filename.c_str(), userdata);
     }
 
@@ -196,6 +213,7 @@ bool layra_pkg_extract_to_directory(const char *pkg_filepath,
                                 output_path.string().c_str())) {
       std::cerr << "Error extracting file " << i << " (" << filename << ").\n";
     }
+    extracted++;
   }
 
   free(entries);
