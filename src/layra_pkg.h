@@ -98,10 +98,16 @@ bool layra_pkg_parse_header(FILE *pkg_file, layra_pkg_header_t *header);
 bool layra_pkg_parse_entries(FILE *pkg_file, layra_pkg_header_t *header,
                              layra_pkg_entry_t **entries);
 
+typedef void (*layra_pkg_progress_cb_t)(int current, int total,
+                                         const char *filename,
+                                         void *userdata);
+
 // Extract a PKG archive into a destination directory.
 // This is used by the installer flow to unpack game content.
 bool layra_pkg_extract_to_directory(const char *pkg_filepath,
-                                     const char *output_dir);
+                                     const char *output_dir,
+                                     layra_pkg_progress_cb_t progress_cb,
+                                     void *userdata);
 
 // Function to open, parse, extract, and mount a PKG file
 bool layra_pkg_open_and_mount(const char *pkg_filepath,
