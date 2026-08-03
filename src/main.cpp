@@ -137,6 +137,20 @@ static LONG WINAPI VectoredExceptionHandler(EXCEPTION_POINTERS *exception_info) 
           }
         }
       }
+
+      // Print instruction bytes at RIP
+      uint8_t *ip = reinterpret_cast<uint8_t *>(context->Rip);
+      if (ip) {
+        fprintf(out, "[Crash] Instruction at RIP:\n  ");
+        __try {
+          for (int i = 0; i < 16; ++i) {
+            fprintf(out, "%02X ", ip[i]);
+          }
+          fprintf(out, "\n");
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+          fprintf(out, " [Invalid memory]\n");
+        }
+      }
     }
     fflush(out);
   };
