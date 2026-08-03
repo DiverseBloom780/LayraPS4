@@ -16,19 +16,18 @@
 
 namespace Gui {
 
-// Application/Game tile data
 struct AppTile {
   std::string name;
-  std::string icon;     // Future: actual icon path
-  std::string exe_path; // Path to eboot.bin or executable
+  std::string icon;
+  std::string exe_path;
   bool installed;
-  bool is_game;     // true = discovered game, false = system utility
-  float hover_anim; // Animation value 0.0-1.0
+  bool is_game;
+  float hover_anim;
 };
 
-// PS4 UI State
 static int selected_app = 0;
-static int selected_menu = -1; // -1 = apps row selected, 0+ = function menu
+static int selected_menu = -1;
+static int selected_sidebar = 0;
 static float scroll_offset = 0.0f;
 static float scroll_target = 0.0f;
 static std::vector<AppTile> apps;
@@ -37,7 +36,6 @@ static std::string games_directory;
 static bool s_game_running = false;
 static Gui::LaunchCallback s_launch_callback;
 
-// Animation state
 static float menu_fade = 0.0f;
 static float time_accumulator = 0.0f;
 
@@ -50,6 +48,14 @@ static std::string FindGameIconPath(const std::filesystem::path &game_root) {
   return {};
 }
 
+static void DrawRoundedPanel(ImDrawList *draw_list, ImVec2 pos, ImVec2 size,
+                             ImU32 fill, ImU32 outline, float rounding = 18.0f) {
+  draw_list->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), fill,
+                           rounding);
+  draw_list->AddRect(pos, ImVec2(pos.x + size.x, pos.y + size.y), outline,
+                     rounding, 0, 1.5f);
+}
+
 void PS4UI::SetGamesDirectory(const std::string &path) {
   games_directory = path;
   printf("[PS4UI] Games directory set to: %s\n", path.c_str());
@@ -59,9 +65,7 @@ void PS4UI::SetLaunchCallback(LaunchCallback callback) {
   s_launch_callback = std::move(callback);
 }
 
-bool PS4UI::IsGameRunning() {
-  return s_game_running;
-}
+bool PS4UI::IsGameRunning() { return s_game_running; }
 
 void PS4UI::ScanGamesDirectory() {
   namespace fs = std::filesystem;
@@ -72,8 +76,7 @@ void PS4UI::ScanGamesDirectory() {
   }
 
   if (!fs::exists(games_directory) || !fs::is_directory(games_directory)) {
-    printf("[PS4UI] Games directory does not exist: %s\n",
-           games_directory.c_str());
+    printf("[PS4UI] Games directory does not exist: %s\n", games_directory.c_str());
     return;
   }
 
@@ -81,22 +84,18 @@ void PS4UI::ScanGamesDirectory() {
   int found = 0;
 
   std::error_code ec;
-  for (const auto &entry :
-       fs::recursive_directory_iterator(games_directory, ec)) {
-    if (!entry.is_regular_file())
+  for (const auto &entry : fs::recursive_directory_iterator(games_directory, ec)) {
+    if (!entry.is_regular_file()) {
       continue;
+    }
 
     auto filename = entry.path().filename().string();
-    // Look for eboot.bin (PS4 game executable) or .elf files
     if (filename == "eboot.bin" || entry.path().extension() == ".elf" ||
         entry.path().extension() == ".self") {
-
-      // Use parent directory name as game title
       std::string game_name = entry.path().parent_path().filename().string();
       std::string exe = entry.path().string();
       std::string icon = FindGameIconPath(entry.path().parent_path());
 
-      // Avoid duplicates
       bool exists = false;
       for (const auto &app : apps) {
         if (app.exe_path == exe) {
@@ -104,14 +103,12 @@ void PS4UI::ScanGamesDirectory() {
           break;
         }
       }
-      if (exists)
+      if (exists) {
         continue;
+      }
 
       apps.push_back({game_name, icon, exe, true, true, 0.0f});
       printf("[PS4UI]   Found: %s -> %s\n", game_name.c_str(), exe.c_str());
-      if (!icon.empty()) {
-        printf("[PS4UI]     Icon: %s\n", icon.c_str());
-      }
       found++;
     }
   }
@@ -119,46 +116,38 @@ void PS4UI::ScanGamesDirectory() {
   printf("[PS4UI] Scan complete: %d game(s) found\n", found);
 }
 
-// Initialize PS4 UI
 void PS4UI::Initialize() {
-  // Load saved settings first
   SettingsUI::LoadSettings();
 
-  // Apply games directory from settings
-  const auto& settings = SettingsUI::GetSettings();
+  const auto &settings = SettingsUI::GetSettings();
   if (!settings.games_directory.empty()) {
     games_directory = settings.games_directory;
   }
 
-  // Add default PS4 system utilities
   apps = {
       {"What's New", "", "", true, false, 0.0f},
-      {"TV & Video", "", "", true, false, 0.0f},
-      {"Browser", "", "", true, false, 0.0f},
+      {"Games", "", "", true, false, 0.0f},
+      {"Media", "", "", true, false, 0.0f},
       {"Library", "", "", true, false, 0.0f},
       {"Settings", "", "", true, false, 0.0f},
   };
 
-  // Scan for games if directory is set
   ScanGamesDirectory();
 
-  // If no games found, add placeholder entries
-  if (std::none_of(apps.begin(), apps.end(),
-                   [](const AppTile &a) { return a.is_game; })) {
+  if (std::none_of(apps.begin(), apps.end(), [](const AppTile &a) { return a.is_game; })) {
     apps.push_back({"No Games Found", "", "", false, true, 0.0f});
   }
 
   selected_app = 0;
   selected_menu = -1;
+  selected_sidebar = 0;
   scroll_offset = 0.0f;
 }
 
-// Render the PS4 Dashboard
 void PS4UI::Render() {
   ImGuiIO &io = ImGui::GetIO();
   time_accumulator += io.DeltaTime;
 
-  // Full screen window
   ImGui::SetNextWindowPos(ImVec2(0, 0));
   ImGui::SetNextWindowSize(io.DisplaySize);
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -171,46 +160,23 @@ void PS4UI::Render() {
                    ImGuiWindowFlags_NoCollapse |
                    ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-  // Background gradient (PS4 blue)
   ImDrawList *draw_list = ImGui::GetWindowDrawList();
   ImVec2 screen_size = io.DisplaySize;
 
-  // Animated background
-  float wave = sinf(time_accumulator * 0.5f) * 0.1f + 0.9f;
-  ImU32 bg_top = IM_COL32(0, 30, 60, 255);
-  ImU32 bg_bottom =
-      IM_COL32(int(20 * wave), int(60 * wave), int(100 * wave), 255);
+  float wave = sinf(time_accumulator * 0.45f) * 0.08f + 0.92f;
+  ImU32 bg_top = IM_COL32(5, 18, 38, 255);
+  ImU32 bg_bottom = IM_COL32(18, 56, 100, 255);
   draw_list->AddRectFilledMultiColor(ImVec2(0, 0), screen_size, bg_top, bg_top,
                                      bg_bottom, bg_bottom);
 
-  // Status bar at top
+  draw_list->AddCircleFilled(ImVec2(screen_size.x * 0.82f, screen_size.y * 0.18f),
+                             200.0f, IM_COL32(50, 120, 220, 50), 48);
+
   RenderStatusBar(draw_list, screen_size);
-
-  // Main content area
-  float content_start_y = 60.0f;
-  float apps_row_y = content_start_y + 100.0f;
-
-  // Render app icons row
-  RenderAppsRow(draw_list, screen_size, apps_row_y);
-
-  // Function menu (if apps are selected)
-  if (selected_menu == -1) {
-    show_function_menu = true;
-    menu_fade = std::min(menu_fade + io.DeltaTime * 4.0f, 1.0f);
-  } else {
-    menu_fade = std::max(menu_fade - io.DeltaTime * 4.0f, 0.0f);
-    if (menu_fade <= 0.0f)
-      show_function_menu = false;
-  }
-
-  if (show_function_menu) {
-    RenderFunctionMenu(draw_list, screen_size, apps_row_y + 300.0f);
-  }
-
-  // Selection info at bottom
+  RenderAppsRow(draw_list, screen_size, 130.0f);
+  RenderFunctionMenu(draw_list, screen_size, 400.0f);
   RenderSelectionInfo(draw_list, screen_size);
 
-  // Render Settings dialog on top if open
   if (SettingsUI::IsOpen()) {
     SettingsUI::Render();
   }
@@ -220,248 +186,177 @@ void PS4UI::Render() {
 }
 
 void PS4UI::RenderStatusBar(ImDrawList *draw_list, ImVec2 screen_size) {
-  float bar_height = 50.0f;
+  float bar_height = 54.0f;
+  DrawRoundedPanel(draw_list, ImVec2(0, 0), ImVec2(screen_size.x, bar_height),
+                   IM_COL32(6, 12, 22, 220), IM_COL32(90, 120, 180, 90), 0.0f);
 
-  // Semi-transparent background
-  draw_list->AddRectFilled(ImVec2(0, 0), ImVec2(screen_size.x, bar_height),
-                           IM_COL32(0, 0, 0, 180));
+  ImVec2 user_pos(24.0f, 12.0f);
+  draw_list->AddCircleFilled(ImVec2(user_pos.x + 16, user_pos.y + 16), 16.0f,
+                             IM_COL32(120, 180, 255, 255), 24);
+  draw_list->AddText(ImVec2(user_pos.x + 44, user_pos.y + 8),
+                     IM_COL32(255, 255, 255, 255), "LayraUser");
 
-  // User icon and name (left)
-  ImVec2 user_pos(20.0f, 15.0f);
-  draw_list->AddCircleFilled(ImVec2(user_pos.x + 15, user_pos.y + 10), 15.0f,
-                             IM_COL32(100, 150, 200, 255), 16);
-
-  ImGui::SetCursorPos(ImVec2(user_pos.x + 40, user_pos.y + 5));
-  ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
-  ImGui::Text("Player");
-  ImGui::PopStyleColor();
-
-  // Time (right)
-  char time_str[32];
+  char time_str[24];
   time_t now = time(nullptr);
   struct tm *timeinfo = localtime(&now);
   strftime(time_str, sizeof(time_str), "%I:%M %p", timeinfo);
+  draw_list->AddText(ImVec2(screen_size.x - 140.0f, 12.0f),
+                     IM_COL32(255, 255, 255, 255), time_str);
 
-  ImVec2 time_size = ImGui::CalcTextSize(time_str);
-  ImGui::SetCursorPos(ImVec2(screen_size.x - time_size.x - 20, user_pos.y + 5));
-  ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
-  ImGui::Text("%s", time_str);
-  ImGui::PopStyleColor();
-
-  // Notifications icon
-  float notif_x = screen_size.x - time_size.x - 80;
-  draw_list->AddCircleFilled(ImVec2(notif_x, user_pos.y + 10), 12.0f,
-                             IM_COL32(255, 255, 255, 200), 16);
+  draw_list->AddCircleFilled(ImVec2(screen_size.x - 100.0f, 20.0f), 8.0f,
+                             IM_COL32(90, 220, 120, 255), 12);
+  draw_list->AddCircleFilled(ImVec2(screen_size.x - 78.0f, 20.0f), 8.0f,
+                             IM_COL32(255, 220, 90, 255), 12);
+  draw_list->AddCircleFilled(ImVec2(screen_size.x - 56.0f, 20.0f), 8.0f,
+                             IM_COL32(255, 255, 255, 180), 12);
 }
 
-void PS4UI::RenderAppsRow(ImDrawList *draw_list, ImVec2 screen_size,
-                          float y_pos) {
-  float tile_size = 200.0f;
-  float tile_spacing = 40.0f;
-  float selected_scale = 1.3f;
+void PS4UI::RenderAppsRow(ImDrawList *draw_list, ImVec2 screen_size, float y_pos) {
+  const float panel_x = 24.0f;
+  const float panel_y = 78.0f;
+  const float panel_w = screen_size.x - 48.0f;
+  const float panel_h = 300.0f;
 
-  // Center the selected tile
-  float center_x = screen_size.x * 0.5f;
-  scroll_target = selected_app * (tile_size + tile_spacing);
-  scroll_offset += (scroll_target - scroll_offset) * 0.15f; // Smooth scroll
+  DrawRoundedPanel(draw_list, ImVec2(panel_x, panel_y), ImVec2(panel_w, panel_h),
+                   IM_COL32(8, 18, 35, 210), IM_COL32(90, 120, 180, 110), 24.0f);
 
-  // Render tiles
-  for (size_t i = 0; i < apps.size(); i++) {
-    float tile_x = center_x - scroll_offset + i * (tile_size + tile_spacing);
+  draw_list->AddText(ImVec2(panel_x + 24.0f, panel_y + 20.0f),
+                     IM_COL32(255, 255, 255, 255), "PS4 Home");
+  draw_list->AddText(ImVec2(panel_x + 24.0f, panel_y + 52.0f),
+                     IM_COL32(150, 180, 220, 255), "Featured content and quick access");
 
-    // Skip tiles outside screen
-    if (tile_x + tile_size < -200 || tile_x > screen_size.x + 200) {
-      apps[i].hover_anim = 0.0f;
-      continue;
+  float tile_size = 146.0f;
+  float tile_spacing = 24.0f;
+  float start_x = panel_x + 24.0f;
+  float start_y = panel_y + 90.0f;
+
+  for (size_t i = 0; i < apps.size(); ++i) {
+    float tile_x = start_x + i * (tile_size + tile_spacing);
+    if (tile_x + tile_size > screen_size.x - 24.0f) {
+      break;
     }
 
     bool is_selected = (i == selected_app && selected_menu == -1);
-
-    // Animate selection
-    float target_anim = is_selected ? 1.0f : 0.0f;
-    apps[i].hover_anim += (target_anim - apps[i].hover_anim) * 0.2f;
-
-    float scale = 1.0f + apps[i].hover_anim * (selected_scale - 1.0f);
+    float hover = is_selected ? 1.0f : 0.0f;
+    float scale = 1.0f + hover * 0.06f;
     float current_size = tile_size * scale;
-    float offset = (current_size - tile_size) * 0.5f;
 
-    ImVec2 tile_pos(tile_x - offset, y_pos - offset);
+    ImVec2 tile_pos(tile_x, start_y);
+    ImVec2 tile_end(tile_x + current_size, start_y + current_size);
 
-    // Tile shadow (for selected)
-    if (apps[i].hover_anim > 0.01f) {
-      float shadow_alpha = apps[i].hover_anim * 150;
-      draw_list->AddRectFilled(ImVec2(tile_pos.x + 10, tile_pos.y + 10),
-                               ImVec2(tile_pos.x + current_size + 10,
-                                      tile_pos.y + current_size + 10),
-                               IM_COL32(0, 0, 0, (int)shadow_alpha), 10.0f);
-    }
+    ImU32 base = is_selected ? IM_COL32(60, 120, 190, 255)
+                             : IM_COL32(30, 40, 60, 230);
+    DrawRoundedPanel(draw_list, tile_pos, ImVec2(current_size, current_size),
+                     base, IM_COL32(255, 255, 255, 90), 16.0f);
 
-    // Tile background
-    ImU32 tile_color =
-        is_selected ? IM_COL32(60, 120, 180, 255) : IM_COL32(40, 40, 50, 220);
-
-    draw_list->AddRectFilled(
-        tile_pos, ImVec2(tile_pos.x + current_size, tile_pos.y + current_size),
-        tile_color, 10.0f);
-
-    // Selection border
     if (is_selected) {
-      float border_thickness = 3.0f;
-      draw_list->AddRect(
-          tile_pos,
-          ImVec2(tile_pos.x + current_size, tile_pos.y + current_size),
-          IM_COL32(255, 255, 255, 255), 10.0f, 0, border_thickness);
+      draw_list->AddCircleFilled(ImVec2(tile_x + current_size - 18.0f, start_y + 18.0f),
+                                 7.0f, IM_COL32(255, 255, 255, 255), 12);
     }
 
-    // App icon placeholder (would be actual icon)
-    ImU32 icon_color = apps[i].icon.empty()
-                         ? IM_COL32(190, 190, 190, 180)
-                         : IM_COL32(100, 200, 255, 220);
-    ImVec2 icon_pos(tile_pos.x + current_size * 0.5f,
-                    tile_pos.y + current_size * 0.4f);
-    draw_list->AddCircleFilled(icon_pos, current_size * 0.25f, icon_color,
-                               32);
+    ImVec2 icon_pos(tile_x + current_size * 0.5f, start_y + current_size * 0.4f);
+    draw_list->AddCircleFilled(icon_pos, current_size * 0.24f,
+                               apps[i].icon.empty() ? IM_COL32(200, 200, 220, 220)
+                                                    : IM_COL32(90, 200, 255, 220), 24);
 
-    // Icon indicator for loaded game icons
-    if (!apps[i].icon.empty()) {
-      ImVec2 badge_pos(tile_pos.x + current_size - 14,
-                       tile_pos.y + 10);
-      draw_list->AddCircleFilled(badge_pos, 8.0f, IM_COL32(255, 255, 255, 220),
-                                 16);
-      draw_list->AddCircleFilled(badge_pos, 5.5f, IM_COL32(20, 110, 220, 255),
-                                 16);
-    }
-
-    // App name
     ImVec2 text_size = ImGui::CalcTextSize(apps[i].name.c_str());
-    ImVec2 text_pos(tile_pos.x + (current_size - text_size.x) * 0.5f,
-                    tile_pos.y + current_size - 40.0f);
-
-    draw_list->AddText(text_pos, IM_COL32(255, 255, 255, 255),
-                       apps[i].name.c_str());
+    draw_list->AddText(ImVec2(tile_x + (current_size - text_size.x) * 0.5f,
+                              start_y + current_size - 34.0f),
+                       IM_COL32(255, 255, 255, 255), apps[i].name.c_str());
   }
 }
 
-void PS4UI::RenderFunctionMenu(ImDrawList *draw_list, ImVec2 screen_size,
-                               float y_pos) {
-  const char *menu_items[] = {"Close Application", "Information",
-                              "Add to Favorites", "Options"};
-  int menu_count = 4;
+void PS4UI::RenderFunctionMenu(ImDrawList *draw_list, ImVec2 screen_size, float y_pos) {
+  const char *actions[] = {"Launch", "Information", "Favorite", "Settings"};
+  float panel_x = screen_size.x - 280.0f;
+  float panel_y = y_pos;
+  float panel_w = 240.0f;
+  float panel_h = 200.0f;
 
-  float menu_alpha = menu_fade;
-  float menu_height = 50.0f;
-  float menu_width = 400.0f;
-  float menu_x = (screen_size.x - menu_width) * 0.5f;
+  DrawRoundedPanel(draw_list, ImVec2(panel_x, panel_y), ImVec2(panel_w, panel_h),
+                   IM_COL32(10, 16, 28, 220), IM_COL32(90, 120, 180, 110), 18.0f);
 
-  for (int i = 0; i < menu_count; i++) {
-    float item_y = y_pos + i * (menu_height + 10.0f);
+  draw_list->AddText(ImVec2(panel_x + 18.0f, panel_y + 16.0f),
+                     IM_COL32(255, 255, 255, 255), "Quick Actions");
 
-    // Menu item background
-    ImU32 bg_color = (selected_menu == i)
-                         ? IM_COL32(255, 255, 255, (int)(220 * menu_alpha))
-                         : IM_COL32(50, 50, 60, (int)(180 * menu_alpha));
-
-    draw_list->AddRectFilled(ImVec2(menu_x, item_y),
-                             ImVec2(menu_x + menu_width, item_y + menu_height),
-                             bg_color, 5.0f);
-
-    // Text
-    ImVec2 text_size = ImGui::CalcTextSize(menu_items[i]);
-    ImU32 text_color = (selected_menu == i)
-                           ? IM_COL32(0, 0, 0, (int)(255 * menu_alpha))
-                           : IM_COL32(255, 255, 255, (int)(255 * menu_alpha));
-
-    draw_list->AddText(
-        ImVec2(menu_x + 20, item_y + (menu_height - text_size.y) * 0.5f),
-        text_color, menu_items[i]);
+  for (int i = 0; i < 4; ++i) {
+    float item_y = panel_y + 48.0f + i * 34.0f;
+    ImU32 bg = (selected_menu == i) ? IM_COL32(88, 130, 210, 255)
+                                    : IM_COL32(30, 45, 70, 220);
+    draw_list->AddRectFilled(ImVec2(panel_x + 12.0f, item_y),
+                             ImVec2(panel_x + panel_w - 12.0f, item_y + 24.0f),
+                             bg, 8.0f);
+    draw_list->AddText(ImVec2(panel_x + 24.0f, item_y + 4.0f),
+                       IM_COL32(255, 255, 255, 255), actions[i]);
   }
 }
 
 void PS4UI::RenderSelectionInfo(ImDrawList *draw_list, ImVec2 screen_size) {
   if (selected_app >= 0 && selected_app < apps.size()) {
-    float info_y = screen_size.y - 60.0f;
+    float info_y = screen_size.y - 70.0f;
+    DrawRoundedPanel(draw_list, ImVec2(22.0f, info_y),
+                     ImVec2(screen_size.x - 44.0f, 44.0f),
+                     IM_COL32(0, 0, 0, 185), IM_COL32(90, 120, 180, 90), 12.0f);
 
-    // Background bar
-    draw_list->AddRectFilled(ImVec2(0, info_y),
-                             ImVec2(screen_size.x, screen_size.y),
-                             IM_COL32(0, 0, 0, 180));
-
-    // Selected app name (larger)
     const char *app_name = apps[selected_app].name.c_str();
-    ImGui::PushFont(ImGui::GetFont()); // Would use larger font here
-    ImVec2 text_size = ImGui::CalcTextSize(app_name);
+    draw_list->AddText(ImVec2(40.0f, info_y + 12.0f),
+                       IM_COL32(255, 255, 255, 255), app_name);
 
-    draw_list->AddText(
-        ImVec2((screen_size.x - text_size.x) * 0.5f, info_y + 15),
-        IM_COL32(255, 255, 255, 255), app_name);
-    ImGui::PopFont();
-
-    // Navigation hints
-    const char *hint = "◁ ▷ Navigate    ✕ Select    ⬜ Options";
-    ImVec2 hint_size = ImGui::CalcTextSize(hint);
-    draw_list->AddText(
-        ImVec2((screen_size.x - hint_size.x) * 0.5f, screen_size.y - 20),
-        IM_COL32(180, 180, 180, 255), hint);
+    const char *hint = "← → Navigate   Enter Launch   Tab Settings";
+    draw_list->AddText(ImVec2(screen_size.x - 300.0f, info_y + 12.0f),
+                       IM_COL32(180, 180, 180, 255), hint);
   }
 }
 
 void PS4UI::HandleInput() {
-  ImGuiIO &io = ImGui::GetIO();
-
-  // Keyboard navigation
   if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
-    if (selected_menu == -1) {
-      // Navigate apps
-      selected_app = std::max(0, selected_app - 1);
-    }
+    selected_app = std::max(0, selected_app - 1);
+    selected_menu = -1;
   }
 
   if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
-    if (selected_menu == -1) {
-      // Navigate apps
-      selected_app = std::min((int)apps.size() - 1, selected_app + 1);
-    }
+    selected_app = std::min((int)apps.size() - 1, selected_app + 1);
+    selected_menu = -1;
   }
 
   if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
     if (selected_menu == -1) {
-      // Move to function menu
       selected_menu = 0;
     } else {
-      // Navigate menu down
       selected_menu = std::min(3, selected_menu + 1);
     }
   }
 
   if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
     if (selected_menu > 0) {
-      // Navigate menu up
       selected_menu--;
     } else if (selected_menu == 0) {
-      // Back to apps
       selected_menu = -1;
     }
   }
 
-  if (ImGui::IsKeyPressed(ImGuiKey_Enter) ||
-      ImGui::IsKeyPressed(ImGuiKey_Space)) {
-    if (selected_menu == -1 && selected_app >= 0 &&
-        selected_app < static_cast<int>(apps.size())) {
-      // Launch selected app
+  if (ImGui::IsKeyPressed(ImGuiKey_Tab)) {
+    selected_sidebar = (selected_sidebar + 1) % 5;
+  }
+
+  if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_Space)) {
+    if (selected_menu >= 0) {
+      if (selected_menu == 3) {
+        SettingsUI::Open();
+      }
+      return;
+    }
+
+    if (selected_app >= 0 && selected_app < static_cast<int>(apps.size())) {
       printf("[PS4UI] Launching: %s\n", apps[selected_app].name.c_str());
       if (apps[selected_app].name == "Settings") {
         SettingsUI::Open();
       } else if (apps[selected_app].is_game && !apps[selected_app].exe_path.empty()) {
-        printf("[PS4UI]   Executable: %s\n",
-               apps[selected_app].exe_path.c_str());
         if (s_launch_callback) {
           s_game_running = true;
           s_launch_callback(apps[selected_app].exe_path);
         }
       }
-    } else if (selected_menu >= 0) {
-      // Execute menu action
-      printf("[PS4UI] Menu action: %d\n", selected_menu);
     }
   }
 }
