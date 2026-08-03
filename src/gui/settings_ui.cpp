@@ -119,7 +119,7 @@ void SettingsUI::Render() {
 
   bool still_open = true;
   if (ImGui::Begin("Settings##LayraSettings", &still_open,
-                   ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking)) {
+                   ImGuiWindowFlags_NoCollapse)) {
     ImGui::TextColored(ImVec4(0.75f, 0.88f, 1.0f, 1.0f), "System Settings");
     ImGui::SameLine();
     ImGui::TextDisabled("PS4-style configuration");
