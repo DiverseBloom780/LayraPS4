@@ -23,50 +23,46 @@ static bool s_open = false;
 static LayraSettings s_settings{};
 static int s_activeTab = 0;
 
-// ─── Settings file path ──────────────────────────────────────
-static std::string GetSettingsPath() {
-  // Store settings next to the executable
-  return "layra_settings.ini";
+static std::string GetSettingsPath() { return "layra_settings.ini"; }
+
+static void DrawSectionTitle(const char *title) {
+  ImGui::Spacing();
+  ImGui::TextColored(ImVec4(0.9f, 0.95f, 1.0f, 1.0f), "%s", title);
+  ImGui::Separator();
+  ImGui::Spacing();
 }
 
-// ─── Native Folder Picker (Windows) ──────────────────────────
-std::string SettingsUI::BrowseForFolder(const char* title) {
+std::string SettingsUI::BrowseForFolder(const char *title) {
 #ifdef _WIN32
   std::string result;
-
-  // Use modern IFileDialog (Vista+)
   HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   bool needUninit = SUCCEEDED(hr);
 
-  IFileDialog* pfd = nullptr;
+  IFileDialog *pfd = nullptr;
   hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL,
-                        IID_IFileDialog, reinterpret_cast<void**>(&pfd));
+                        IID_IFileDialog, reinterpret_cast<void **>(&pfd));
   if (SUCCEEDED(hr)) {
-    // Set as folder picker
     DWORD dwOptions;
     pfd->GetOptions(&dwOptions);
     pfd->SetOptions(dwOptions | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
 
-    // Set title
     wchar_t wTitle[256];
     MultiByteToWideChar(CP_UTF8, 0, title, -1, wTitle, 256);
     pfd->SetTitle(wTitle);
 
-    // Show dialog
     hr = pfd->Show(nullptr);
     if (SUCCEEDED(hr)) {
-      IShellItem* psi = nullptr;
+      IShellItem *psi = nullptr;
       hr = pfd->GetResult(&psi);
       if (SUCCEEDED(hr)) {
         PWSTR pszPath = nullptr;
         hr = psi->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
         if (SUCCEEDED(hr)) {
-          // Convert wide string to UTF-8
-          int len = WideCharToMultiByte(CP_UTF8, 0, pszPath, -1,
-                                        nullptr, 0, nullptr, nullptr);
+          int len = WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, nullptr, 0,
+                                        nullptr, nullptr);
           result.resize(len - 1);
-          WideCharToMultiByte(CP_UTF8, 0, pszPath, -1,
-                              result.data(), len, nullptr, nullptr);
+          WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, result.data(), len,
+                              nullptr, nullptr);
           CoTaskMemFree(pszPath);
         }
         psi->Release();
@@ -75,15 +71,15 @@ std::string SettingsUI::BrowseForFolder(const char* title) {
     pfd->Release();
   }
 
-  if (needUninit) CoUninitialize();
+  if (needUninit) {
+    CoUninitialize();
+  }
   return result;
 #else
-  // Linux/macOS: would use zenity or similar
   return "";
 #endif
 }
 
-// ─── Public API ──────────────────────────────────────────────
 void SettingsUI::Open() {
   s_open = true;
   s_activeTab = 0;
@@ -96,328 +92,242 @@ void SettingsUI::Close() {
 }
 
 bool SettingsUI::IsOpen() { return s_open; }
+const LayraSettings &SettingsUI::GetSettings() { return s_settings; }
+LayraSettings &SettingsUI::GetMutableSettings() { return s_settings; }
 
-const LayraSettings& SettingsUI::GetSettings() { return s_settings; }
-LayraSettings& SettingsUI::GetMutableSettings() { return s_settings; }
-
-// ─── Main Render ─────────────────────────────────────────────
 void SettingsUI::Render() {
-  if (!s_open) return;
+  if (!s_open) {
+    return;
+  }
 
-  ImGuiIO& io = ImGui::GetIO();
+  ImGuiIO &io = ImGui::GetIO();
   ImVec2 center(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
-  ImVec2 dialogSize(780.0f, 560.0f);
+  ImVec2 dialogSize(960.0f, 640.0f);
 
   ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
   ImGui::SetNextWindowSize(dialogSize, ImGuiCond_Appearing);
 
-  // ── Dark themed window ──
-  ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.08f, 0.12f, 0.97f));
-  ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.06f, 0.06f, 0.10f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.10f, 0.15f, 0.30f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_Tab, ImVec4(0.12f, 0.12f, 0.18f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_TabSelected, ImVec4(0.18f, 0.25f, 0.50f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_TabHovered, ImVec4(0.25f, 0.35f, 0.60f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.22f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.25f, 0.45f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.35f, 0.60f, 1.0f));
-  ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.30f, 0.50f, 0.90f, 1.0f));
-  ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
-  ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
-  ImGui::PushStyleVar(ImGuiStyleVar_TabRounding, 4.0f);
-  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 16));
+  ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.06f, 0.11f, 0.97f));
+  ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.08f, 0.10f, 0.16f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.12f, 0.16f, 0.24f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.14f, 0.24f, 0.44f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.32f, 0.56f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.25f, 0.38f, 0.66f, 1.0f));
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 20.0f);
+  ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18, 18));
 
   bool still_open = true;
   if (ImGui::Begin("Settings##LayraSettings", &still_open,
-                    ImGuiWindowFlags_NoCollapse)) {
-
-    // ── Tab Bar ──
-    if (ImGui::BeginTabBar("SettingsTabs", ImGuiTabBarFlags_None)) {
-      if (ImGui::BeginTabItem(" Graphics ")) {
-        RenderGraphicsTab();
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem(" Audio ")) {
-        RenderAudioTab();
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem(" System ")) {
-        RenderSystemTab();
-        ImGui::EndTabItem();
-      }
-      if (ImGui::BeginTabItem(" Paths ")) {
-        RenderPathsTab();
-        ImGui::EndTabItem();
-      }
-      ImGui::EndTabBar();
-    }
-
-    // ── Bottom buttons ──
+                   ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking)) {
+    ImGui::TextColored(ImVec4(0.75f, 0.88f, 1.0f, 1.0f), "System Settings");
+    ImGui::SameLine();
+    ImGui::TextDisabled("PS4-style configuration");
     ImGui::Separator();
-    float buttonWidth = 120.0f;
-    float spacing = 10.0f;
-    float totalWidth = buttonWidth * 3 + spacing * 2;
-    ImGui::SetCursorPosX((ImGui::GetWindowWidth() - totalWidth) * 0.5f);
 
-    if (ImGui::Button("Save", ImVec2(buttonWidth, 36))) {
-      SaveSettings();
-      printf("[Settings] Settings saved\n");
+    ImGui::BeginChild("Sidebar", ImVec2(180.0f, 0.0f), true);
+    const char *tabs[] = {"Overview", "Graphics", "Audio", "System", "Paths"};
+    for (int i = 0; i < 5; ++i) {
+      bool selected = (s_activeTab == i);
+      ImGui::PushStyleColor(ImGuiCol_Button, selected ? ImVec4(0.18f, 0.30f, 0.56f, 1.0f)
+                                                     : ImVec4(0.10f, 0.13f, 0.20f, 1.0f));
+      if (ImGui::Button(tabs[i], ImVec2(-1, 36))) {
+        s_activeTab = i;
+      }
+      ImGui::PopStyleColor();
+      ImGui::Spacing();
     }
-    ImGui::SameLine(0, spacing);
-    if (ImGui::Button("Apply", ImVec2(buttonWidth, 36))) {
-      SaveSettings();
-      printf("[Settings] Settings applied\n");
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+    ImGui::BeginChild("Content", ImVec2(0.0f, -56.0f), true);
+    switch (s_activeTab) {
+    case 0:
+      RenderOverviewTab();
+      break;
+    case 1:
+      RenderGraphicsTab();
+      break;
+    case 2:
+      RenderAudioTab();
+      break;
+    case 3:
+      RenderSystemTab();
+      break;
+    case 4:
+      RenderPathsTab();
+      break;
     }
-    ImGui::SameLine(0, spacing);
-    if (ImGui::Button("Close", ImVec2(buttonWidth, 36))) {
+    ImGui::EndChild();
+
+    ImGui::Separator();
+    ImGui::SetCursorPosX((ImGui::GetWindowWidth() - 360.0f) * 0.5f);
+    if (ImGui::Button("Save", ImVec2(100, 34))) {
+      SaveSettings();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Apply", ImVec2(100, 34))) {
+      SaveSettings();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Close", ImVec2(100, 34))) {
       s_open = false;
     }
   }
   ImGui::End();
 
-  ImGui::PopStyleVar(4);
-  ImGui::PopStyleColor(10);
+  ImGui::PopStyleVar(3);
+  ImGui::PopStyleColor(6);
 
   if (!still_open) {
     s_open = false;
   }
 }
 
-// ─── Graphics Tab ────────────────────────────────────────────
-void SettingsUI::RenderGraphicsTab() {
-  ImGui::Spacing();
+void SettingsUI::RenderOverviewTab() {
+  DrawSectionTitle("System Summary");
+  ImGui::BeginChild("OverviewCards", ImVec2(0, 180), true);
+  ImGui::Columns(2, "OverviewCols", false);
+  ImGui::Text("User Profile");
+  ImGui::NextColumn();
+  ImGui::Text("%s", s_settings.username.c_str());
+  ImGui::NextColumn();
+  ImGui::Text("Games Folder");
+  ImGui::NextColumn();
+  ImGui::TextWrapped("%s", s_settings.games_directory.empty() ? "Not set" : s_settings.games_directory.c_str());
+  ImGui::Columns(1);
+  ImGui::EndChild();
 
-  // GPU Backend
-  const char* backends[] = { "Vulkan" };
+  DrawSectionTitle("Quick Actions");
+  if (ImGui::Button("Scan Games Directory", ImVec2(220, 0))) {
+    printf("[Settings] Re-scan requested\n");
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Open Firmware Folder", ImVec2(220, 0))) {
+    std::string path = BrowseForFolder("Select Firmware Folder");
+    if (!path.empty()) {
+      s_settings.firmware_directory = path;
+    }
+  }
+}
+
+void SettingsUI::RenderGraphicsTab() {
+  DrawSectionTitle("Rendering");
+  const char *backends[] = {"Vulkan"};
   ImGui::Text("GPU Backend");
-  ImGui::SameLine(200);
-  ImGui::SetNextItemWidth(250);
+  ImGui::SameLine(220);
+  ImGui::SetNextItemWidth(240);
   ImGui::Combo("##gpu_backend", &s_settings.gpu_backend, backends, 1);
 
-  ImGui::Spacing();
-
-  // Resolution Scale
   ImGui::Text("Resolution Scale");
-  ImGui::SameLine(200);
-  ImGui::SetNextItemWidth(250);
+  ImGui::SameLine(220);
+  ImGui::SetNextItemWidth(240);
   ImGui::SliderInt("##res_scale", &s_settings.resolution_scale, 50, 300, "%d%%");
 
-  ImGui::Spacing();
-
-  // VSync
   ImGui::Text("VSync");
-  ImGui::SameLine(200);
+  ImGui::SameLine(220);
   ImGui::Checkbox("##vsync", &s_settings.vsync);
 
-  ImGui::Spacing();
-
-  // Anisotropic Filtering
-  const char* aniso_levels[] = { "1x", "2x", "4x", "8x", "16x" };
+  const char *aniso_levels[] = {"1x", "2x", "4x", "8x", "16x"};
   int aniso_idx = 0;
   switch (s_settings.anisotropic_filter) {
-    case 1:  aniso_idx = 0; break;
-    case 2:  aniso_idx = 1; break;
-    case 4:  aniso_idx = 2; break;
-    case 8:  aniso_idx = 3; break;
-    case 16: aniso_idx = 4; break;
+  case 1: aniso_idx = 0; break;
+  case 2: aniso_idx = 1; break;
+  case 4: aniso_idx = 2; break;
+  case 8: aniso_idx = 3; break;
+  case 16: aniso_idx = 4; break;
   }
   ImGui::Text("Anisotropic Filter");
-  ImGui::SameLine(200);
-  ImGui::SetNextItemWidth(250);
+  ImGui::SameLine(220);
+  ImGui::SetNextItemWidth(240);
   if (ImGui::Combo("##aniso", &aniso_idx, aniso_levels, 5)) {
     int vals[] = {1, 2, 4, 8, 16};
     s_settings.anisotropic_filter = vals[aniso_idx];
   }
 
-  ImGui::Spacing();
-
-  // Fullscreen
   ImGui::Text("Fullscreen");
-  ImGui::SameLine(200);
+  ImGui::SameLine(220);
   ImGui::Checkbox("##fullscreen", &s_settings.fullscreen);
-
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
-
-  // Info box
-  ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.7f, 0.9f, 1.0f));
-  ImGui::TextWrapped("Graphics settings control the Vulkan rendering pipeline. "
-                     "Resolution scaling affects internal render targets. "
-                     "Changes may require a restart.");
-  ImGui::PopStyleColor();
 }
 
-// ─── Audio Tab ───────────────────────────────────────────────
 void SettingsUI::RenderAudioTab() {
-  ImGui::Spacing();
-
-  // Audio Backend
-  const char* audio_backends[] = { "SDL3 Audio", "XAudio2 (Windows)" };
+  DrawSectionTitle("Audio");
+  const char *audio_backends[] = {"SDL3 Audio", "XAudio2 (Windows)"};
   ImGui::Text("Audio Backend");
-  ImGui::SameLine(200);
-  ImGui::SetNextItemWidth(250);
+  ImGui::SameLine(220);
+  ImGui::SetNextItemWidth(240);
   ImGui::Combo("##audio_backend", &s_settings.audio_backend, audio_backends, 2);
 
-  ImGui::Spacing();
-
-  // Master Volume
   ImGui::Text("Master Volume");
-  ImGui::SameLine(200);
-  ImGui::SetNextItemWidth(250);
+  ImGui::SameLine(220);
+  ImGui::SetNextItemWidth(240);
   ImGui::SliderInt("##volume", &s_settings.volume, 0, 100, "%d%%");
 
-  ImGui::Spacing();
-
-  // Audio Stretching
   ImGui::Text("Time Stretching");
-  ImGui::SameLine(200);
+  ImGui::SameLine(220);
   ImGui::Checkbox("##audio_stretch", &s_settings.audio_stretching);
-
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
-
-  ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.7f, 0.9f, 1.0f));
-  ImGui::TextWrapped("Audio stretching reduces crackling when the emulator "
-                     "runs slower than full speed, but adds slight latency.");
-  ImGui::PopStyleColor();
 }
 
-// ─── System Tab ──────────────────────────────────────────────
 void SettingsUI::RenderSystemTab() {
-  ImGui::Spacing();
-
-  // System Language
-  const char* languages[] = {
-    "Japanese", "English (US)", "French", "Spanish", "German",
-    "Italian", "Dutch", "Portuguese (PT)", "Russian", "Korean",
-    "Chinese (Traditional)", "Chinese (Simplified)", "Finnish",
-    "Swedish", "Danish", "Norwegian", "Polish", "Portuguese (BR)",
-    "English (UK)", "Turkish", "Arabic"
-  };
+  DrawSectionTitle("System");
+  const char *languages[] = {"Japanese", "English (US)", "French", "Spanish", "German",
+                              "Italian", "Dutch", "Portuguese (PT)", "Russian", "Korean",
+                              "Chinese (Traditional)", "Chinese (Simplified)", "Finnish",
+                              "Swedish", "Danish", "Norwegian", "Polish", "Portuguese (BR)",
+                              "English (UK)", "Turkish", "Arabic"};
   ImGui::Text("System Language");
-  ImGui::SameLine(200);
-  ImGui::SetNextItemWidth(250);
+  ImGui::SameLine(220);
+  ImGui::SetNextItemWidth(240);
   ImGui::Combo("##sys_lang", &s_settings.system_language, languages, 21);
 
-  ImGui::Spacing();
-
-  // Username
   static char username_buf[64] = {};
   if (username_buf[0] == '\0') {
     strncpy(username_buf, s_settings.username.c_str(), sizeof(username_buf) - 1);
   }
   ImGui::Text("Username");
-  ImGui::SameLine(200);
-  ImGui::SetNextItemWidth(250);
+  ImGui::SameLine(220);
+  ImGui::SetNextItemWidth(240);
   if (ImGui::InputText("##username", username_buf, sizeof(username_buf))) {
     s_settings.username = username_buf;
   }
 
-  ImGui::Spacing();
-
-  // Show Splash
   ImGui::Text("Show Boot Splash");
-  ImGui::SameLine(200);
+  ImGui::SameLine(220);
   ImGui::Checkbox("##splash", &s_settings.show_splash);
 
-  ImGui::Spacing();
-
-  // Show FPS
   ImGui::Text("Show FPS Counter");
-  ImGui::SameLine(200);
+  ImGui::SameLine(220);
   ImGui::Checkbox("##show_fps", &s_settings.show_fps);
 
-  ImGui::Spacing();
-
-  // Log to File
   ImGui::Text("Log to File");
-  ImGui::SameLine(200);
+  ImGui::SameLine(220);
   ImGui::Checkbox("##log_file", &s_settings.log_to_file);
-
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
-
-  ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.7f, 0.9f, 1.0f));
-  ImGui::TextWrapped("System settings emulate the PS4's own system configuration. "
-                     "Games use these values for language selection and user identity.");
-  ImGui::PopStyleColor();
 }
 
-// ─── Paths Tab ───────────────────────────────────────────────
 void SettingsUI::RenderPathsTab() {
-  ImGui::Spacing();
-
-  // Games Directory
+  DrawSectionTitle("Directory Paths");
   ImGui::Text("Games Directory");
-  ImGui::Spacing();
-
-  ImGui::SetNextItemWidth(480);
-  char games_buf[512] = {};
-  strncpy(games_buf, s_settings.games_directory.c_str(), sizeof(games_buf) - 1);
-  ImGui::InputText("##games_path", games_buf, sizeof(games_buf),
-                    ImGuiInputTextFlags_ReadOnly);
+  ImGui::InputText("##games_path", (char *)"", 0, ImGuiInputTextFlags_ReadOnly);
   ImGui::SameLine();
-  if (ImGui::Button("Browse##games", ImVec2(90, 0))) {
+  ImGui::TextWrapped("%s", s_settings.games_directory.empty() ? "Not configured" : s_settings.games_directory.c_str());
+  if (ImGui::Button("Browse Games", ImVec2(180, 0))) {
     std::string path = BrowseForFolder("Select Games Directory");
     if (!path.empty()) {
       s_settings.games_directory = path;
-      printf("[Settings] Games directory set to: %s\n", path.c_str());
     }
   }
 
   ImGui::Spacing();
-  ImGui::Spacing();
-
-  // Firmware Directory
   ImGui::Text("Firmware Modules Directory");
-  ImGui::Spacing();
-
-  ImGui::SetNextItemWidth(480);
-  char fw_buf[512] = {};
-  strncpy(fw_buf, s_settings.firmware_directory.c_str(), sizeof(fw_buf) - 1);
-  ImGui::InputText("##fw_path", fw_buf, sizeof(fw_buf),
-                    ImGuiInputTextFlags_ReadOnly);
-  ImGui::SameLine();
-  if (ImGui::Button("Browse##firmware", ImVec2(90, 0))) {
+  ImGui::TextWrapped("%s", s_settings.firmware_directory.empty() ? "Not configured" : s_settings.firmware_directory.c_str());
+  if (ImGui::Button("Browse Firmware", ImVec2(180, 0))) {
     std::string path = BrowseForFolder("Select Firmware Modules Directory");
     if (!path.empty()) {
       s_settings.firmware_directory = path;
-      printf("[Settings] Firmware directory set to: %s\n", path.c_str());
     }
   }
-
-  ImGui::Spacing();
-  ImGui::Separator();
-  ImGui::Spacing();
-
-  // Directory status indicators
-  auto StatusIcon = [](const std::string& path, const char* label) {
-    bool valid = !path.empty() && std::filesystem::exists(path) &&
-                 std::filesystem::is_directory(path);
-    ImVec4 color = valid ? ImVec4(0.2f, 0.8f, 0.3f, 1.0f)
-                         : ImVec4(0.8f, 0.3f, 0.2f, 1.0f);
-    const char* icon = valid ? "[OK]" : "[NOT SET]";
-
-    ImGui::PushStyleColor(ImGuiCol_Text, color);
-    ImGui::Text("%s %s", icon, label);
-    ImGui::PopStyleColor();
-  };
-
-  StatusIcon(s_settings.games_directory, "Games Directory");
-  StatusIcon(s_settings.firmware_directory, "Firmware Directory");
-
-  ImGui::Spacing();
-  ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.7f, 0.9f, 1.0f));
-  ImGui::TextWrapped("Point the Games Directory to a folder containing extracted "
-                     "PS4 game folders (each with eboot.bin). The Firmware Directory "
-                     "should contain PS4 system modules (.sprx files).");
-  ImGui::PopStyleColor();
 }
 
-// ─── Save / Load ─────────────────────────────────────────────
 void SettingsUI::SaveSettings() {
   std::string path = GetSettingsPath();
   std::ofstream f(path);
@@ -460,40 +370,37 @@ void SettingsUI::LoadSettings() {
 
   std::string line;
   while (std::getline(f, line)) {
-    // Skip section headers and empty lines
-    if (line.empty() || line[0] == '[' || line[0] == '#') continue;
+    if (line.empty() || line[0] == '[' || line[0] == '#') {
+      continue;
+    }
 
     auto eq = line.find('=');
-    if (eq == std::string::npos) continue;
+    if (eq == std::string::npos) {
+      continue;
+    }
 
     std::string key = line.substr(0, eq);
     std::string val = line.substr(eq + 1);
 
-    // Paths
-    if (key == "games_directory")    s_settings.games_directory = val;
+    if (key == "games_directory") s_settings.games_directory = val;
     if (key == "firmware_directory") s_settings.firmware_directory = val;
-    // Graphics
-    if (key == "gpu_backend")        s_settings.gpu_backend = std::stoi(val);
-    if (key == "resolution_scale")   s_settings.resolution_scale = std::stoi(val);
-    if (key == "vsync")              s_settings.vsync = (val == "1");
+    if (key == "gpu_backend") s_settings.gpu_backend = std::stoi(val);
+    if (key == "resolution_scale") s_settings.resolution_scale = std::stoi(val);
+    if (key == "vsync") s_settings.vsync = (val == "1");
     if (key == "anisotropic_filter") s_settings.anisotropic_filter = std::stoi(val);
-    if (key == "fullscreen")         s_settings.fullscreen = (val == "1");
-    // Audio
-    if (key == "audio_backend")      s_settings.audio_backend = std::stoi(val);
-    if (key == "volume")             s_settings.volume = std::stoi(val);
-    if (key == "audio_stretching")   s_settings.audio_stretching = (val == "1");
-    // System
-    if (key == "system_language")    s_settings.system_language = std::stoi(val);
-    if (key == "show_splash")        s_settings.show_splash = (val == "1");
-    if (key == "show_fps")           s_settings.show_fps = (val == "1");
-    if (key == "log_to_file")        s_settings.log_to_file = (val == "1");
-    if (key == "username")           s_settings.username = val;
+    if (key == "fullscreen") s_settings.fullscreen = (val == "1");
+    if (key == "audio_backend") s_settings.audio_backend = std::stoi(val);
+    if (key == "volume") s_settings.volume = std::stoi(val);
+    if (key == "audio_stretching") s_settings.audio_stretching = (val == "1");
+    if (key == "system_language") s_settings.system_language = std::stoi(val);
+    if (key == "show_splash") s_settings.show_splash = (val == "1");
+    if (key == "show_fps") s_settings.show_fps = (val == "1");
+    if (key == "log_to_file") s_settings.log_to_file = (val == "1");
+    if (key == "username") s_settings.username = val;
   }
 
   f.close();
   printf("[Settings] Loaded from: %s\n", path.c_str());
-  printf("[Settings]   Games: %s\n", s_settings.games_directory.c_str());
-  printf("[Settings]   Firmware: %s\n", s_settings.firmware_directory.c_str());
 }
 
 } // namespace Gui
