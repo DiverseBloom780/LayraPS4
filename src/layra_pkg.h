@@ -23,6 +23,8 @@
 // PKG Entry ID for filenames table
 #define PKG_ENTRY_ID_FILENAMES 0x200
 
+#pragma pack(push, 1)
+
 // PKG Header Structure (Big-Endian)
 typedef struct {
   uint32_t pkg_magic;           // 0x000 - 0x7F434E54 ('CNTP')
@@ -90,6 +92,8 @@ typedef struct {
   uint32_t size;            // Size of data
   uint64_t padding;         // blank padding
 } layra_pkg_entry_t;
+
+#pragma pack(pop)
 
 // Function to parse PKG header
 bool layra_pkg_parse_header(FILE *pkg_file, layra_pkg_header_t *header);
