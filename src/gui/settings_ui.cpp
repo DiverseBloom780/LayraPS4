@@ -6,6 +6,7 @@
 #include "../layra_pkg.h"
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -35,6 +36,7 @@ static std::atomic<int> s_pkg_install_current{0};
 static std::atomic<int> s_pkg_install_total{0};
 static std::string s_pkg_install_status;
 static std::string s_pkg_install_file;
+static double s_pkg_install_started_at = 0.0;
 
 static std::string GetSettingsPath() { return "layra_settings.ini"; }
 
@@ -168,6 +170,7 @@ static void InstallPkgWorker(const std::string &pkg_path,
     s_pkg_install_total.store(0);
     s_pkg_install_status = "Preparing extraction...";
     s_pkg_install_file.clear();
+    s_pkg_install_started_at = ImGui::GetTime();
   }
 
   bool ok = layra_pkg_extract_to_directory(pkg_path.c_str(),
@@ -360,6 +363,10 @@ void SettingsUI::RenderOverviewTab() {
     ImGui::TextWrapped("%s", status.c_str());
 
     float progress = s_pkg_install_progress.load();
+    if (s_pkg_install_total.load() <= 0 || s_pkg_install_current.load() <= 0) {
+      double elapsed = ImGui::GetTime() - s_pkg_install_started_at;
+      progress = std::min(0.95f, static_cast<float>(0.12f + std::fmod(elapsed * 0.45f, 0.8f)));
+    }
     int current = s_pkg_install_current.load();
     int total = s_pkg_install_total.load();
     std::string file_name;
