@@ -124,6 +124,78 @@ bool layra_pkg_extract_file(FILE *pkg_file, const layra_pkg_entry_t *entry,
   return out.good();
 }
 
+bool layra_pkg_extract_to_directory(const char *pkg_filepath,
+                                     const char *output_dir) {
+  FILE *pkg_file = fopen(pkg_filepath, "rb");
+  if (!pkg_file) {
+    std::cerr << "Error opening PKG file " << pkg_filepath << "\n";
+    return false;
+  }
+
+  layra_pkg_header_t header;
+  if (!layra_pkg_parse_header(pkg_file, &header)) {
+    fclose(pkg_file);
+    return false;
+  }
+
+  layra_pkg_entry_t *entries = nullptr;
+  if (!layra_pkg_parse_entries(pkg_file, &header, &entries)) {
+    fclose(pkg_file);
+    return false;
+  }
+
+  std::vector<char> filename_table;
+  for (uint32_t i = 0; i < header.pkg_file_count; ++i) {
+    if (entries[i].id == PKG_ENTRY_ID_FILENAMES) {
+      filename_table.resize(entries[i].size);
+      if (fseek(pkg_file, entries[i].offset, SEEK_SET) != 0) {
+        std::cerr << "Error seeking to filename table in PKG.\n";
+        free(entries);
+        fclose(pkg_file);
+        return false;
+      }
+      if (fread(filename_table.data(), 1, entries[i].size, pkg_file) !=
+          entries[i].size) {
+        std::cerr << "Error reading filename table from PKG.\n";
+        free(entries);
+        fclose(pkg_file);
+        return false;
+      }
+      break;
+    }
+  }
+
+  fs::path dest_dir = fs::path(output_dir);
+  try {
+    fs::create_directories(dest_dir);
+  } catch (const fs::filesystem_error &e) {
+    std::cerr << "Error creating extraction directory: " << e.what() << "\n";
+    free(entries);
+    fclose(pkg_file);
+    return false;
+  }
+
+  for (uint32_t i = 0; i < header.pkg_file_count; ++i) {
+    std::string filename;
+    if (!filename_table.empty() &&
+        entries[i].filename_offset < filename_table.size()) {
+      filename = std::string(filename_table.data() + entries[i].filename_offset);
+    } else {
+      filename = "file_" + std::to_string(i) + ".bin";
+    }
+
+    fs::path output_path = dest_dir / filename;
+    if (!layra_pkg_extract_file(pkg_file, &entries[i],
+                                output_path.string().c_str())) {
+      std::cerr << "Error extracting file " << i << " (" << filename << ").\n";
+    }
+  }
+
+  free(entries);
+  fclose(pkg_file);
+  return true;
+}
+
 bool layra_pkg_open_and_mount(const char *pkg_filepath,
                               const char *mount_point) {
   FILE *pkg_file = fopen(pkg_filepath, "rb");
