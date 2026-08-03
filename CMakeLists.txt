@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.24)
 project(LayraPS4 VERSION 0.1 LANGUAGES C CXX)
 
+if(WIN32)
+    enable_language(ASM_MASM)
+endif()
+
+
 # Language standards
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -71,6 +76,11 @@ list(APPEND CORE_SOURCES
     ${LAYRA_ROOT}/src/core/orbis_system.cpp
     ${LAYRA_ROOT}/src/emulator.cpp
 )
+
+if(WIN32)
+    list(APPEND CORE_SOURCES ${LAYRA_ROOT}/src/core/kernel/sysv_abi_wrapper.asm)
+endif()
+
 
 # Remove duplicates
 list(REMOVE_DUPLICATES CORE_SOURCES)
