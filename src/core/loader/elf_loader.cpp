@@ -6,6 +6,24 @@
 #include "cpu_patcher.h"
 #include "core/kernel/module_manager.h"
 #include "core/memory/memory_manager.h"
+#include "common/types.h"
+
+#include "core/kernel/sysv_abi_wrapper.h"
+
+static uint64_t PS4_SYSV_ABI GenericHleStub() {
+  printf("[HLE Stub] Called unimplemented function stub!\n");
+  return 0;
+}
+
+static uint64_t GetWrappedGenericStub() {
+  static Core::AbiWrapperManager wrapper_manager;
+  static uint64_t wrapped_stub = 0;
+  if (wrapped_stub == 0) {
+    wrapped_stub = wrapper_manager.CreateWrapper(reinterpret_cast<uint64_t>(&GenericHleStub));
+  }
+  return wrapped_stub;
+}
+
 
 #include <cstddef>
 #include <cstdint>
@@ -413,6 +431,18 @@ bool ElfLoader::MapSegments(const std::vector<uint8_t> &data,
 
   printf("[ElfLoader] Mapping ELF segments directly into guest address space\n");
 
+  uint64_t total_span = max_vaddr - min_vaddr;
+  printf("[ElfLoader] Pre-reserving address range: 0x%llX - 0x%llX (span: 0x%llX)\n",
+         (unsigned long long)min_vaddr, (unsigned long long)max_vaddr,
+         (unsigned long long)total_span);
+
+  // Reserve the entire range directly in address_space without adding to vma_map_
+  if (!memory->GetAddressSpace().Map(min_vaddr, total_span, -1, Memory::Protection::ReadWriteExecute)) {
+    fprintf(stderr, "[ElfLoader] ERROR: Failed to reserve address range 0x%llX-0x%llX\n",
+            (unsigned long long)min_vaddr, (unsigned long long)max_vaddr);
+    return false;
+  }
+
   // --- Phase 2: Write segment data into the mapped region ---
   for (size_t phdr_idx = 0; phdr_idx < phdrs.size(); phdr_idx++) {
     const auto &phdr = phdrs[phdr_idx];
@@ -493,19 +523,78 @@ bool ElfLoader::ApplyRelocations(const std::vector<uint8_t> &data,
     return false;
   }
 
-  uint64_t rela_addr = 0;
-  uint64_t rela_size = 0;
-  uint64_t rela_ent_size = sizeof(Elf64_Rela);
-  uint64_t sym_addr = 0;
-  uint64_t str_addr = 0;
+  // --- SCE-specific dynamic tag constants ---
+  // PS4 binaries use these instead of standard DT_RELA/DT_SYMTAB/etc.
+  constexpr int64_t DT_SCE_STRTAB    = 0x61000035;
+  constexpr int64_t DT_SCE_STRSZ     = 0x61000037;
+  constexpr int64_t DT_SCE_SYMTAB    = 0x61000039;
+  constexpr int64_t DT_SCE_SYMTABSZ  = 0x6100003f;
+  constexpr int64_t DT_SCE_SYMENT    = 0x6100003b;
+  constexpr int64_t DT_SCE_RELA      = 0x6100002f;
+  constexpr int64_t DT_SCE_RELASZ    = 0x61000031;
+  constexpr int64_t DT_SCE_RELAENT   = 0x61000033;
+  constexpr int64_t DT_SCE_JMPREL    = 0x61000029;
+  constexpr int64_t DT_SCE_PLTRELSZ  = 0x6100002d;
+  constexpr int64_t DT_SCE_PLTREL    = 0x6100002b;
+  constexpr int64_t DT_SCE_PLTGOT    = 0x61000027;
+  constexpr int64_t DT_INIT          = 0x0000000c;
+  constexpr int64_t DT_FINI          = 0x0000000d;
+
+  // --- Phase 1: Load PT_SCE_DYNLIBDATA into a buffer ---
+  // In PS4 binaries, the relocation/symbol/string tables live inside
+  // SCE_DYNLIBDATA, and the dynamic tag pointers are offsets into it.
+  std::vector<uint8_t> dynlib_data;
+  for (size_t i = 0; i < phdrs.size(); i++) {
+    if (phdrs[i].p_type == PT_SCE_DYNLIBDATA && phdrs[i].p_filesz > 0) {
+      size_t file_offset = ResolveSegmentFileOffset(phdrs, data,
+                                                    phdrs[i].p_offset,
+                                                    phdrs[i].p_filesz);
+      if (file_offset == SIZE_MAX) {
+        fprintf(stderr, "[ElfLoader] WARNING: Failed to resolve SCE_DYNLIBDATA offset\n");
+        break;
+      }
+      size_t file_size = static_cast<size_t>(phdrs[i].p_filesz);
+      if (file_offset + file_size <= data.size()) {
+        dynlib_data.resize(file_size);
+        std::memcpy(dynlib_data.data(), data.data() + file_offset, file_size);
+        printf("[ElfLoader] Loaded SCE_DYNLIBDATA: 0x%llX bytes\n",
+               (unsigned long long)file_size);
+      } else {
+        fprintf(stderr, "[ElfLoader] WARNING: SCE_DYNLIBDATA extends beyond file\n");
+      }
+      break;
+    }
+  }
+
+  // --- Phase 2: Parse PT_DYNAMIC to find relocation/symbol/string tables ---
+  // SCE tags' d_ptr values are offsets into dynlib_data.
+  // Standard tags' d_ptr values are virtual addresses (relative to load_base).
+  uint64_t sce_rela_offset = 0;   // Offset into dynlib_data
+  uint64_t sce_rela_size = 0;
+  uint64_t sce_rela_ent = sizeof(Elf64_Rela);
+  uint64_t sce_jmprel_offset = 0; // Offset into dynlib_data
+  uint64_t sce_jmprel_size = 0;
+  uint64_t sce_symtab_offset = 0; // Offset into dynlib_data
+  uint64_t sce_strtab_offset = 0; // Offset into dynlib_data
+  uint64_t sce_strtab_size = 0;
+  uint64_t init_vaddr = 0;
+  uint64_t fini_vaddr = 0;
+  bool has_sce_tags = false;
+
+  // Also track standard ELF tags as fallback
+  uint64_t std_rela_addr = 0;
+  uint64_t std_rela_size = 0;
+  uint64_t std_rela_ent = sizeof(Elf64_Rela);
+  uint64_t std_sym_addr = 0;
+  uint64_t std_str_addr = 0;
 
   for (size_t phdr_idx = 0; phdr_idx < phdrs.size(); phdr_idx++) {
     const auto &phdr = phdrs[phdr_idx];
 
     if (phdr.p_type == PT_DYNAMIC) {
-      // For SELF files, we need to read DYNAMIC data from the right offset
-      size_t dyn_file_offset = ResolveSegmentFileOffset(phdrs, data, phdr.p_offset,
-                                                       phdr.p_filesz);
+      size_t dyn_file_offset = ResolveSegmentFileOffset(phdrs, data,
+                                                        phdr.p_offset,
+                                                        phdr.p_filesz);
       if (dyn_file_offset == SIZE_MAX) {
         fprintf(stderr, "[ElfLoader] WARNING: Failed to resolve DYNAMIC segment offset\n");
         continue;
@@ -520,55 +609,85 @@ bool ElfLoader::ApplyRelocations(const std::vector<uint8_t> &data,
           continue;
         std::memcpy(&dyn, data.data() + dyn_offset, sizeof(Elf64_Dyn));
 
+        if (dyn.d_tag == 0) // DT_NULL
+          break;
+
         switch (dyn.d_tag) {
+        // --- SCE-specific tags (offsets into dynlib_data) ---
+        case DT_SCE_RELA:
+          sce_rela_offset = dyn.d_un.d_ptr;
+          has_sce_tags = true;
+          break;
+        case DT_SCE_RELASZ:
+          sce_rela_size = dyn.d_un.d_val;
+          break;
+        case DT_SCE_RELAENT:
+          sce_rela_ent = dyn.d_un.d_val;
+          break;
+        case DT_SCE_JMPREL:
+          sce_jmprel_offset = dyn.d_un.d_ptr;
+          has_sce_tags = true;
+          break;
+        case DT_SCE_PLTRELSZ:
+          sce_jmprel_size = dyn.d_un.d_val;
+          break;
+        case DT_SCE_SYMTAB:
+          sce_symtab_offset = dyn.d_un.d_ptr;
+          has_sce_tags = true;
+          break;
+        case DT_SCE_STRTAB:
+          sce_strtab_offset = dyn.d_un.d_ptr;
+          has_sce_tags = true;
+          break;
+        case DT_SCE_STRSZ:
+          sce_strtab_size = dyn.d_un.d_val;
+          break;
+        // --- Standard ELF tags (virtual addresses) ---
         case 7: // DT_RELA
-          rela_addr = dyn.d_un.d_ptr + load_base;
+          std_rela_addr = dyn.d_un.d_ptr + load_base;
           break;
         case 8: // DT_RELASZ
-          rela_size = dyn.d_un.d_val;
+          std_rela_size = dyn.d_un.d_val;
           break;
         case 9: // DT_RELAENT
-          rela_ent_size = dyn.d_un.d_val;
+          std_rela_ent = dyn.d_un.d_val;
           break;
         case 5: // DT_SYMTAB
-          sym_addr = dyn.d_un.d_ptr + load_base;
+          std_sym_addr = dyn.d_un.d_ptr + load_base;
           break;
         case 10: // DT_STRTAB
-          str_addr = dyn.d_un.d_ptr + load_base;
+          std_str_addr = dyn.d_un.d_ptr + load_base;
+          break;
+        case DT_INIT:
+          init_vaddr = dyn.d_un.d_ptr;
+          break;
+        case DT_FINI:
+          fini_vaddr = dyn.d_un.d_ptr;
           break;
         default:
           break;
         }
       }
-    } else if (phdr.p_type == PT_SCE_RELA) {
-      rela_addr = phdr.p_vaddr + load_base;
-      rela_size = phdr.p_memsz;
     }
   }
 
-  if (rela_addr == 0 || rela_size == 0) {
-    // Some ELFs don't have relocations, this is fine
-    return true;
+  if (init_vaddr) {
+    printf("[ElfLoader] DT_INIT: 0x%llX\n", (unsigned long long)(load_base + init_vaddr));
+  }
+  if (fini_vaddr) {
+    printf("[ElfLoader] DT_FINI: 0x%llX\n", (unsigned long long)(load_base + fini_vaddr));
   }
 
-  printf("[ElfLoader] Applying relocations: addr=0x%llX, size=0x%llX\n",
-         (unsigned long long)rela_addr, (unsigned long long)rela_size);
-
-  uint64_t count = rela_size / rela_ent_size;
-  for (uint64_t i = 0; i < count; ++i) {
-    Elf64_Rela rela;
-    std::vector<uint8_t> rela_bytes(static_cast<size_t>(rela_ent_size));
-    memory->Read(rela_addr + (i * rela_ent_size), rela_bytes.data(),
-                 static_cast<size_t>(rela_ent_size));
-    std::memcpy(&rela, rela_bytes.data(), sizeof(Elf64_Rela));
-
-    // Relocations apply to VAddr: load_base + r_offset
+  // --- Phase 3: Apply relocations ---
+  // Lambda to apply a single relocation entry
+  auto apply_one_rela = [&](const Elf64_Rela &rela) {
     uint64_t target_vaddr = load_base + rela.r_offset;
-
     uint32_t type = static_cast<uint32_t>(rela.r_info & 0xFFFFFFFF);
     uint32_t sym_idx = static_cast<uint32_t>(rela.r_info >> 32);
 
     switch (type) {
+    case R_X86_64_NONE:
+      break;
     case R_X86_64_RELATIVE: {
       // B + A
       uint64_t value = load_base + static_cast<uint64_t>(rela.r_addend);
@@ -578,49 +697,142 @@ bool ElfLoader::ApplyRelocations(const std::vector<uint8_t> &data,
     case R_X86_64_64:
     case R_X86_64_GLOB_DAT:
     case R_X86_64_JUMP_SLOT: {
-      if (sym_idx != 0 && sym_addr != 0) {
-        Elf64_Sym sym;
+      if (sym_idx == 0)
+        break;
+
+      // Read symbol from the symbol table
+      Elf64_Sym sym{};
+      if (has_sce_tags && !dynlib_data.empty()) {
+        // SCE path: symbol table is in dynlib_data
+        size_t sym_off = static_cast<size_t>(sce_symtab_offset +
+                                             sym_idx * sizeof(Elf64_Sym));
+        if (sym_off + sizeof(Elf64_Sym) <= dynlib_data.size()) {
+          std::memcpy(&sym, dynlib_data.data() + sym_off, sizeof(Elf64_Sym));
+        }
+      } else if (std_sym_addr != 0) {
+        // Standard ELF path: symbol table is in mapped memory
         std::vector<uint8_t> sym_bytes(sizeof(Elf64_Sym));
-        memory->Read(sym_addr + (sym_idx * sizeof(Elf64_Sym)), sym_bytes.data(),
-                     sizeof(Elf64_Sym));
+        memory->Read(std_sym_addr + (sym_idx * sizeof(Elf64_Sym)),
+                     sym_bytes.data(), sizeof(Elf64_Sym));
         std::memcpy(&sym, sym_bytes.data(), sizeof(Elf64_Sym));
+      } else {
+        fprintf(stderr, "[ElfLoader] ERROR: No symbol table for reloc at 0x%llX\n",
+                (unsigned long long)target_vaddr);
+        break;
+      }
 
-        if (sym.st_value != 0) {
-          uint64_t value = load_base + sym.st_value + rela.r_addend;
-          memory->Write(target_vaddr, &value, sizeof(value));
-        } else if (str_addr != 0) {
-          char sym_name[256] = {0};
-          memory->Read(str_addr + sym.st_name, sym_name, sizeof(sym_name));
+      if (sym.st_value != 0) {
+        // Symbol has a defined value in this module
+        uint64_t value = load_base + sym.st_value;
+        if (type == R_X86_64_64)
+          value += rela.r_addend;
+        memory->Write(target_vaddr, &value, sizeof(value));
+      } else {
+        // Symbol needs to be resolved from another module (import)
+        char sym_name[256] = {0};
+        if (has_sce_tags && !dynlib_data.empty()) {
+          size_t name_off = static_cast<size_t>(sce_strtab_offset + sym.st_name);
+          if (name_off < dynlib_data.size()) {
+            size_t max_len = std::min<size_t>(255, dynlib_data.size() - name_off);
+            std::memcpy(sym_name, dynlib_data.data() + name_off, max_len);
+            sym_name[max_len] = '\0';
+          }
+        } else if (std_str_addr != 0) {
+          memory->Read(std_str_addr + sym.st_name, sym_name, sizeof(sym_name));
+        }
 
-          if (module_manager) {
-            uint64_t resolved_addr = static_cast<uint64_t>(
-                module_manager->ResolveSymbol("", sym_name));
-            if (resolved_addr != 0) {
-              uint64_t value = resolved_addr + rela.r_addend;
-              memory->Write(target_vaddr, &value, sizeof(value));
-              printf("[ElfLoader] Resolved import: %s -> 0x%llx\n", sym_name,
-                     (unsigned long long)resolved_addr);
-            } else {
-              printf("[ElfLoader] ERROR: Unresolved import: %s\n", sym_name);
-              return false;
-            }
+        if (module_manager && sym_name[0] != '\0') {
+          uint64_t resolved_addr = static_cast<uint64_t>(
+              module_manager->ResolveSymbol("", sym_name));
+          if (resolved_addr != 0) {
+            uint64_t value = resolved_addr;
+            if (type == R_X86_64_64)
+              value += rela.r_addend;
+            memory->Write(target_vaddr, &value, sizeof(value));
           } else {
-            printf("[ElfLoader] ERROR: No module manager available to resolve %s\n",
-                   sym_name);
-            return false;
+            // Stub unresolved imports with a trap instead of failing
+            // This allows the game to progress further before hitting the stub
+            printf("[ElfLoader] WARNING: Unresolved import: %s (stubbed)\n", sym_name);
+            uint64_t stub_value = GetWrappedGenericStub();
+            memory->Write(target_vaddr, &stub_value, sizeof(stub_value));
           }
         } else {
-          fprintf(stderr, "[ElfLoader] ERROR: Cannot resolve relocation for symbol "
-                          "index %u because symbol or string table is missing\n",
-                  sym_idx);
-          return false;
+          // No module manager or empty name - stub it
+          uint64_t stub_value = GetWrappedGenericStub();
+          memory->Write(target_vaddr, &stub_value, sizeof(stub_value));
         }
       }
       break;
     }
     default:
+      // Silently skip unknown relocation types
       break;
     }
+  };
+
+  // Lambda to process a relocation table from dynlib_data
+  auto process_rela_from_dynlib = [&](uint64_t offset, uint64_t size,
+                                      uint64_t ent_size, const char *name) {
+    if (size == 0 || ent_size == 0)
+      return;
+    uint64_t count = size / ent_size;
+    printf("[ElfLoader] Applying %s: %llu entries (offset=0x%llX in DYNLIBDATA)\n",
+           name, (unsigned long long)count, (unsigned long long)offset);
+
+    uint64_t applied = 0;
+    for (uint64_t i = 0; i < count; ++i) {
+      size_t rela_off = static_cast<size_t>(offset + i * ent_size);
+      if (rela_off + sizeof(Elf64_Rela) > dynlib_data.size())
+        break;
+      Elf64_Rela rela;
+      std::memcpy(&rela, dynlib_data.data() + rela_off, sizeof(Elf64_Rela));
+      apply_one_rela(rela);
+      applied++;
+    }
+    printf("[ElfLoader] Applied %llu %s relocations\n",
+           (unsigned long long)applied, name);
+  };
+
+  if (has_sce_tags && !dynlib_data.empty()) {
+    // SCE path: read relocations from dynlib_data buffer
+    printf("[ElfLoader] Using SCE dynamic tags for relocations\n");
+    printf("[ElfLoader]   SCE_RELA: offset=0x%llX size=0x%llX ent=0x%llX\n",
+           (unsigned long long)sce_rela_offset,
+           (unsigned long long)sce_rela_size,
+           (unsigned long long)sce_rela_ent);
+    printf("[ElfLoader]   SCE_JMPREL: offset=0x%llX size=0x%llX\n",
+           (unsigned long long)sce_jmprel_offset,
+           (unsigned long long)sce_jmprel_size);
+    printf("[ElfLoader]   SCE_SYMTAB: offset=0x%llX\n",
+           (unsigned long long)sce_symtab_offset);
+    printf("[ElfLoader]   SCE_STRTAB: offset=0x%llX size=0x%llX\n",
+           (unsigned long long)sce_strtab_offset,
+           (unsigned long long)sce_strtab_size);
+
+    // Apply regular relocations (DT_SCE_RELA)
+    process_rela_from_dynlib(sce_rela_offset, sce_rela_size,
+                             sce_rela_ent, "RELA");
+
+    // Apply PLT jump slot relocations (DT_SCE_JMPREL)
+    process_rela_from_dynlib(sce_jmprel_offset, sce_jmprel_size,
+                             sizeof(Elf64_Rela), "JMPREL");
+  } else if (std_rela_addr != 0 && std_rela_size != 0) {
+    // Standard ELF path: read relocations from mapped memory
+    printf("[ElfLoader] Using standard ELF dynamic tags for relocations\n");
+    printf("[ElfLoader] Applying relocations: addr=0x%llX, size=0x%llX\n",
+           (unsigned long long)std_rela_addr, (unsigned long long)std_rela_size);
+
+    uint64_t count = std_rela_size / std_rela_ent;
+    for (uint64_t i = 0; i < count; ++i) {
+      Elf64_Rela rela;
+      std::vector<uint8_t> rela_bytes(static_cast<size_t>(std_rela_ent));
+      memory->Read(std_rela_addr + (i * std_rela_ent), rela_bytes.data(),
+                   static_cast<size_t>(std_rela_ent));
+      std::memcpy(&rela, rela_bytes.data(), sizeof(Elf64_Rela));
+      apply_one_rela(rela);
+    }
+  } else {
+    printf("[ElfLoader] No relocations found (this may be normal for some ELFs)\n");
   }
 
   return true;
