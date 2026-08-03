@@ -4,6 +4,7 @@
 #pragma once
 
 #include "core/loader/symbols.h"
+#include "sysv_abi_wrapper.h"
 #include <cstdint>
 #include <map>
 #include <string>
@@ -47,6 +48,7 @@ private:
   std::vector<ModuleInfo> loaded_modules;
   // Map of Module Name -> List of HLE Exports
   std::map<std::string, std::vector<Core::Loader::HLEExport>> hle_modules;
+  AbiWrapperManager abi_wrapper_;
 };
 
 } // namespace Core::Kernel
