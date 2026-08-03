@@ -3,11 +3,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "settings_ui.h"
+#include "../layra_pkg.h"
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <sstream>
+#include <thread>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -22,6 +26,15 @@ namespace Gui {
 static bool s_open = false;
 static LayraSettings s_settings{};
 static int s_activeTab = 0;
+static std::string s_status_message;
+static std::thread s_pkg_install_thread;
+static std::mutex s_pkg_install_mutex;
+static std::atomic<bool> s_pkg_install_running{false};
+static std::atomic<float> s_pkg_install_progress{0.0f};
+static std::atomic<int> s_pkg_install_current{0};
+static std::atomic<int> s_pkg_install_total{0};
+static std::string s_pkg_install_status;
+static std::string s_pkg_install_file;
 
 static std::string GetSettingsPath() { return "layra_settings.ini"; }
 
@@ -80,9 +93,99 @@ std::string SettingsUI::BrowseForFolder(const char *title) {
 #endif
 }
 
+static std::string BrowseForPkgFile(const char *title) {
+#ifdef _WIN32
+  std::string result;
+  HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  bool needUninit = SUCCEEDED(hr);
+
+  IFileOpenDialog *pfd = nullptr;
+  hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL,
+                        IID_IFileOpenDialog, reinterpret_cast<void **>(&pfd));
+  if (SUCCEEDED(hr)) {
+    COMDLG_FILTERSPEC filters[] = {{L"PlayStation PKG files", L"*.pkg;*.PKG"},
+                                   {L"All files", L"*.*"}};
+    pfd->SetFileTypes(2, filters);
+
+    wchar_t wTitle[256];
+    MultiByteToWideChar(CP_UTF8, 0, title, -1, wTitle, 256);
+    pfd->SetTitle(wTitle);
+
+    hr = pfd->Show(nullptr);
+    if (SUCCEEDED(hr)) {
+      IShellItem *psi = nullptr;
+      hr = pfd->GetResult(&psi);
+      if (SUCCEEDED(hr)) {
+        PWSTR pszPath = nullptr;
+        hr = psi->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
+        if (SUCCEEDED(hr)) {
+          int len = WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, nullptr, 0,
+                                        nullptr, nullptr);
+          result.resize(len - 1);
+          WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, result.data(), len,
+                              nullptr, nullptr);
+          CoTaskMemFree(pszPath);
+        }
+        psi->Release();
+      }
+    }
+    pfd->Release();
+  }
+
+  if (needUninit) {
+    CoUninitialize();
+  }
+  return result;
+#else
+  return "";
+#endif
+}
+
+static void OnPkgInstallProgress(int current, int total, const char *filename,
+                                 void *userdata) {
+  (void)userdata;
+  std::lock_guard<std::mutex> lock(s_pkg_install_mutex);
+  s_pkg_install_current.store(current);
+  s_pkg_install_total.store(total);
+  if (total > 0) {
+    s_pkg_install_progress.store(static_cast<float>(current) / static_cast<float>(total));
+  }
+  if (filename) {
+    s_pkg_install_file = filename;
+  }
+  if (total > 0) {
+    s_pkg_install_status = "Extracting package contents...";
+  }
+}
+
+static void InstallPkgWorker(const std::string &pkg_path,
+                             const std::filesystem::path &package_dir) {
+  {
+    std::lock_guard<std::mutex> lock(s_pkg_install_mutex);
+    s_pkg_install_running.store(true);
+    s_pkg_install_progress.store(0.0f);
+    s_pkg_install_current.store(0);
+    s_pkg_install_total.store(0);
+    s_pkg_install_status = "Preparing extraction...";
+    s_pkg_install_file.clear();
+  }
+
+  bool ok = layra_pkg_extract_to_directory(pkg_path.c_str(),
+                                            package_dir.string().c_str(),
+                                            OnPkgInstallProgress, nullptr);
+
+  {
+    std::lock_guard<std::mutex> lock(s_pkg_install_mutex);
+    s_pkg_install_running.store(false);
+    s_pkg_install_progress.store(ok ? 1.0f : 0.0f);
+    s_pkg_install_status = ok ? "PKG installation complete." : "PKG installation failed.";
+  }
+}
+
 void SettingsUI::Open() {
   s_open = true;
   s_activeTab = 0;
+  s_status_message.clear();
   printf("[Settings] Settings dialog opened\n");
 }
 
@@ -208,6 +311,64 @@ void SettingsUI::RenderOverviewTab() {
     if (!path.empty()) {
       s_settings.firmware_directory = path;
     }
+  }
+  ImGui::Spacing();
+  if (ImGui::Button("Install PKG", ImVec2(220, 0)) && !s_pkg_install_running.load()) {
+    std::string pkg_path = BrowseForPkgFile("Select PKG to install");
+    if (!pkg_path.empty()) {
+      std::filesystem::path install_root = s_settings.games_directory.empty()
+                                               ? std::filesystem::current_path() / "games"
+                                               : std::filesystem::path(s_settings.games_directory);
+      std::filesystem::path package_dir = install_root / std::filesystem::path(pkg_path).stem().string();
+      try {
+        std::filesystem::create_directories(package_dir);
+        std::filesystem::copy_file(pkg_path, package_dir / std::filesystem::path(pkg_path).filename().string(),
+                                   std::filesystem::copy_options::overwrite_existing);
+      } catch (const std::filesystem::filesystem_error &e) {
+        s_status_message = std::string("PKG install failed: ") + e.what();
+        printf("[Settings] PKG install failed: %s\n", e.what());
+      }
+
+      if (!s_status_message.empty() && s_status_message.find("PKG install failed") != std::string::npos) {
+        return;
+      }
+
+      s_status_message.clear();
+      if (s_pkg_install_thread.joinable()) {
+        s_pkg_install_thread.join();
+      }
+      s_pkg_install_thread = std::thread(InstallPkgWorker, pkg_path, package_dir);
+    }
+  }
+
+  if (s_pkg_install_running.load()) {
+    ImGui::Spacing();
+    ImGui::TextWrapped("%s", [&]() {
+      std::lock_guard<std::mutex> lock(s_pkg_install_mutex);
+      return s_pkg_install_status;
+    }().c_str());
+
+    float progress = s_pkg_install_progress.load();
+    int current = s_pkg_install_current.load();
+    int total = s_pkg_install_total.load();
+    std::string file_name;
+    {
+      std::lock_guard<std::mutex> lock(s_pkg_install_mutex);
+      file_name = s_pkg_install_file;
+    }
+
+    ImGui::ProgressBar(progress, ImVec2(-1, 0));
+    if (total > 0) {
+      ImGui::Text("%d / %d files", current, total);
+    }
+    if (!file_name.empty()) {
+      ImGui::TextDisabled("%s", file_name.c_str());
+    }
+  }
+
+  if (!s_status_message.empty()) {
+    ImGui::Spacing();
+    ImGui::TextWrapped("%s", s_status_message.c_str());
   }
 }
 
