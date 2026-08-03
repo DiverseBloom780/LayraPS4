@@ -16,13 +16,20 @@ std::vector<ModuleInfo> ModuleManager::GetLoadedModules() const { return {}; }
 
 uintptr_t ModuleManager::ResolveSymbol(const std::string &module,
                                        const std::string &symbol) {
+  // Extract pure NID if symbol is in "NID#lib_id#mod_id" format
+  std::string pure_nid = symbol;
+  size_t hash_pos = symbol.find('#');
+  if (hash_pos != std::string::npos) {
+    pure_nid = symbol.substr(0, hash_pos);
+  }
+
   // If a module name is provided, search specifically in that module
   if (!module.empty()) {
     // Search in HLE modules first
     auto hle_it = hle_modules.find(module);
     if (hle_it != hle_modules.end()) {
       for (const auto &exp : hle_it->second) {
-        if (exp.name == symbol || exp.nid == symbol) {
+        if (exp.name == symbol || exp.nid == symbol || exp.nid == pure_nid) {
           return static_cast<uintptr_t>(exp.host_address);
         }
       }
@@ -35,13 +42,17 @@ uintptr_t ModuleManager::ResolveSymbol(const std::string &module,
         if (sym_it != mi.exports.end()) {
           return static_cast<uintptr_t>(sym_it->second.address);
         }
+        sym_it = mi.exports.find(pure_nid);
+        if (sym_it != mi.exports.end()) {
+          return static_cast<uintptr_t>(sym_it->second.address);
+        }
       }
     }
   } else {
     // Global search across all HLE modules
     for (const auto &[mod_name, exports] : hle_modules) {
       for (const auto &exp : exports) {
-        if (exp.name == symbol || exp.nid == symbol) {
+        if (exp.name == symbol || exp.nid == symbol || exp.nid == pure_nid) {
           return static_cast<uintptr_t>(exp.host_address);
         }
       }
@@ -50,6 +61,10 @@ uintptr_t ModuleManager::ResolveSymbol(const std::string &module,
     // Global search across all natively loaded modules
     for (const auto &mi : loaded_modules) {
       auto sym_it = mi.exports.find(symbol);
+      if (sym_it != mi.exports.end()) {
+        return static_cast<uintptr_t>(sym_it->second.address);
+      }
+      sym_it = mi.exports.find(pure_nid);
       if (sym_it != mi.exports.end()) {
         return static_cast<uintptr_t>(sym_it->second.address);
       }
@@ -91,7 +106,8 @@ void ModuleManager::RegisterHLEExport(const std::string &moduleName,
   Core::Loader::HLEExport exportInfo;
   exportInfo.name = name;
   exportInfo.nid = nid;
-  exportInfo.host_address = hostAddress;
+  exportInfo.host_address = abi_wrapper_.CreateWrapper(hostAddress);
+
 
   hle_modules[moduleName].push_back(exportInfo);
   // printf("[ModuleManager] Registered HLE export: %s#%s (%s)\n",
