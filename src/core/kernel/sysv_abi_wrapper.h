@@ -81,6 +81,56 @@ public:
 #endif
     }
 
+    // Create a stub that just prints the name of the missing function.
+    // This is used for unresolved imports. The guest passes SysV args,
+    // we ignore them and call our MSVC handler with the name string.
+    uint64_t CreateNamedStub(const char* name) {
+#ifdef _WIN32
+        if (current_page_ == nullptr || page_offset_ + 32 > kPageSize) {
+            AllocatePage();
+        }
+
+        uint8_t* tramp = static_cast<uint8_t*>(current_page_) + page_offset_;
+        
+        static const auto target_func = [](const char* n) -> uint64_t {
+            printf("[HLE Stub] Called unimplemented function stub: %s\n", n ? n : "UNKNOWN");
+            return 0;
+        };
+        uint64_t target_addr = reinterpret_cast<uint64_t>(+target_func);
+        // Duplicate the string so it survives ElfLoader destruction
+        uint64_t name_addr = reinterpret_cast<uint64_t>(_strdup(name));
+
+
+        // mov rcx, name_addr (48 B9 <8 bytes>)
+        tramp[0] = 0x48; tramp[1] = 0xB9;
+        std::memcpy(&tramp[2], &name_addr, 8);
+        
+        // mov rax, target_addr (48 B8 <8 bytes>)
+        tramp[10] = 0x48; tramp[11] = 0xB8;
+        std::memcpy(&tramp[12], &target_addr, 8);
+        
+        // sub rsp, 40 (48 83 EC 28)
+        tramp[20] = 0x48; tramp[21] = 0x83; tramp[22] = 0xEC; tramp[23] = 0x28;
+        
+        // call rax (FF D0)
+        tramp[24] = 0xFF; tramp[25] = 0xD0;
+        
+        // add rsp, 40 (48 83 C4 28)
+        tramp[26] = 0x48; tramp[27] = 0x83; tramp[28] = 0xC4; tramp[29] = 0x28;
+        
+        // ret (C3)
+        tramp[30] = 0xC3;
+
+        // pad to 32
+        tramp[31] = 0xCC;
+
+        page_offset_ += 32;
+        return reinterpret_cast<uint64_t>(tramp);
+#else
+        return reinterpret_cast<uint64_t>(&GenericHleStub); // Basic fallback for non-Windows
+#endif
+    }
+
 private:
     static constexpr size_t kPageSize = 4096;
     static constexpr size_t kTrampolineSize = 24; // 10 (mov r11) + 14 (jmp indirect) padded
