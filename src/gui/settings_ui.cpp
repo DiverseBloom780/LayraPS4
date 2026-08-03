@@ -334,6 +334,15 @@ void SettingsUI::RenderOverviewTab() {
       }
 
       s_status_message.clear();
+      {
+        std::lock_guard<std::mutex> lock(s_pkg_install_mutex);
+        s_pkg_install_running.store(true);
+        s_pkg_install_progress.store(0.0f);
+        s_pkg_install_current.store(0);
+        s_pkg_install_total.store(0);
+        s_pkg_install_status = "Starting PKG installation...";
+        s_pkg_install_file.clear();
+      }
       if (s_pkg_install_thread.joinable()) {
         s_pkg_install_thread.join();
       }
@@ -343,10 +352,12 @@ void SettingsUI::RenderOverviewTab() {
 
   if (s_pkg_install_running.load()) {
     ImGui::Spacing();
-    ImGui::TextWrapped("%s", [&]() {
+    std::string status;
+    {
       std::lock_guard<std::mutex> lock(s_pkg_install_mutex);
-      return s_pkg_install_status;
-    }().c_str());
+      status = s_pkg_install_status;
+    }
+    ImGui::TextWrapped("%s", status.c_str());
 
     float progress = s_pkg_install_progress.load();
     int current = s_pkg_install_current.load();
