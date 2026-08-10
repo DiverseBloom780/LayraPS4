@@ -128,6 +128,46 @@ int32_t scePthreadJoin(PthreadT thread, void **value_ptr) {
   return 0;
 }
 
+// Mutex Attribute Implementation
+
+struct InternalMutexAttr {
+  int32_t type = 1; // PTHREAD_MUTEX_ERRORCHECK (default for PS4)
+  int32_t protocol = 0;
+  int32_t ceiling = 0;
+};
+
+int32_t posix_pthread_mutexattr_init(PthreadMutexAttrT *attr) {
+  if (!attr) return -1;
+  auto *a = new InternalMutexAttr();
+  *attr = a;
+  return 0;
+}
+
+int32_t posix_pthread_mutexattr_settype(PthreadMutexAttrT *attr, int32_t type) {
+  if (!attr || !*attr) return -1;
+  static_cast<InternalMutexAttr *>(*attr)->type = type;
+  return 0;
+}
+
+int32_t posix_pthread_mutexattr_gettype(PthreadMutexAttrT *attr, int32_t *type) {
+  if (!attr || !*attr || !type) return -1;
+  *type = static_cast<InternalMutexAttr *>(*attr)->type;
+  return 0;
+}
+
+int32_t posix_pthread_mutexattr_setprotocol(PthreadMutexAttrT *attr, int32_t protocol) {
+  if (!attr || !*attr) return -1;
+  static_cast<InternalMutexAttr *>(*attr)->protocol = protocol;
+  return 0;
+}
+
+int32_t posix_pthread_mutexattr_destroy(PthreadMutexAttrT *attr) {
+  if (!attr || !*attr) return -1;
+  delete static_cast<InternalMutexAttr *>(*attr);
+  *attr = nullptr;
+  return 0;
+}
+
 // Mutex Implementation
 
 struct InternalMutex {
@@ -156,6 +196,14 @@ int32_t posix_pthread_mutex_lock(PthreadMutexT *mutex) {
     return -1;
   static_cast<InternalMutex *>(*mutex)->mutex.lock();
   return 0;
+}
+
+int32_t posix_pthread_mutex_trylock(PthreadMutexT *mutex) {
+  if (!mutex || !*mutex)
+    return -1;
+  if (static_cast<InternalMutex *>(*mutex)->mutex.try_lock())
+    return 0;
+  return 16; // EBUSY
 }
 
 int32_t posix_pthread_mutex_unlock(PthreadMutexT *mutex) {
@@ -224,6 +272,62 @@ int32_t posix_pthread_cond_destroy(PthreadCondT *cond) {
     return -1;
   delete static_cast<InternalCond *>(*cond);
   *cond = nullptr;
+  return 0;
+}
+
+// Thread-Local Storage (pthread_key) Implementation
+
+static constexpr uint32_t PTHREAD_KEYS_MAX = 256;
+
+struct PthreadKeyEntry {
+  std::atomic<int> allocated{0};
+  void (*destructor)(void*) = nullptr;
+  int seqno = 0;
+};
+
+static std::array<PthreadKeyEntry, PTHREAD_KEYS_MAX> g_key_table{};
+static std::mutex g_key_table_mutex;
+
+// Per-thread specific data (simplified - single thread for now)
+static void* g_thread_specific_data[PTHREAD_KEYS_MAX] = {nullptr};
+
+int32_t posix_pthread_key_create(uint32_t *key, void (*destructor)(void*)) {
+  std::scoped_lock lk{g_key_table_mutex};
+  for (uint32_t i = 0; i < PTHREAD_KEYS_MAX; ++i) {
+    if (g_key_table[i].allocated.load() == 0) {
+      g_key_table[i].allocated = 1;
+      g_key_table[i].destructor = destructor;
+      g_key_table[i].seqno++;
+      *key = i;
+      return 0;
+    }
+  }
+  return 11; // EAGAIN
+}
+
+int32_t posix_pthread_key_delete(uint32_t key) {
+  if (key >= PTHREAD_KEYS_MAX) return -1;
+  std::scoped_lock lk{g_key_table_mutex};
+  g_key_table[key].allocated = 0;
+  g_thread_specific_data[key] = nullptr;
+  return 0;
+}
+
+const void* posix_pthread_getspecific(uint32_t key) {
+  if (key >= PTHREAD_KEYS_MAX) return nullptr;
+  return g_thread_specific_data[key];
+}
+
+int32_t posix_pthread_setspecific(uint32_t key, const void *value) {
+  if (key >= PTHREAD_KEYS_MAX) return -1;
+  g_thread_specific_data[key] = const_cast<void*>(value);
+  return 0;
+}
+
+// __cxa_atexit implementation - registers a destructor to be called at exit
+int32_t __cxa_atexit_impl(void (*destructor)(void*), void *arg, void *dso_handle) {
+  // Accept the registration but don't actually need to call destructors on exit
+  // since we're an emulator
   return 0;
 }
 
@@ -827,12 +931,40 @@ void RegisterLibKernel(::Core::Kernel::ModuleManager *module_manager) {
   LIB_FUNCTION("3kg7rT0NQIs", "libkernel", 1, "libkernel", scePthreadExit);
   LIB_FUNCTION("onNY9Byn-W8", "libkernel", 1, "libkernel", scePthreadJoin);
 
+  // Mutex Attributes
+  LIB_FUNCTION("F8bUHwAG284", "libkernel", 1, "libkernel",
+               posix_pthread_mutexattr_init);
+  LIB_FUNCTION("n2MMpvU8igI", "libkernel", 1, "libkernel",
+               posix_pthread_mutexattr_init);
+  LIB_FUNCTION("iMp8QpE+XO4", "libkernel", 1, "libkernel",
+               posix_pthread_mutexattr_settype);
+  LIB_FUNCTION("mDmgMOGVUqg", "libkernel", 1, "libkernel",
+               posix_pthread_mutexattr_settype);
+  LIB_FUNCTION("smWEktiyyG0", "libkernel", 1, "libkernel",
+               posix_pthread_mutexattr_destroy);
+  LIB_FUNCTION("HF7lK46xzjY", "libScePosix", 1, "libkernel",
+               posix_pthread_mutexattr_destroy);
+  LIB_FUNCTION("dQHWEsJtoE4", "libScePosix", 1, "libkernel",
+               posix_pthread_mutexattr_init);
+  LIB_FUNCTION("dQHWEsJtoE4", "libkernel", 1, "libkernel",
+               posix_pthread_mutexattr_init);
+  LIB_FUNCTION("gquEhBrS2iw", "libkernel", 1, "libkernel",
+               posix_pthread_mutexattr_gettype);
+  LIB_FUNCTION("1FGvU0i9saQ", "libkernel", 1, "libkernel",
+               posix_pthread_mutexattr_setprotocol);
+  LIB_FUNCTION("5txKfcMUAok", "libScePosix", 1, "libkernel",
+               posix_pthread_mutexattr_setprotocol);
+
   // Mutexes
   LIB_FUNCTION("cmo1RIYva9o", "libkernel", 1, "libkernel", scePthreadMutexInit);
   LIB_FUNCTION("qH1gXoq71RY", "libkernel", 1, "libkernel",
                posix_pthread_mutex_init);
   LIB_FUNCTION("9UK1vLZQft4", "libkernel", 1, "libkernel",
                posix_pthread_mutex_lock);
+  LIB_FUNCTION("upoVrzMHFeE", "libkernel", 1, "libkernel",
+               posix_pthread_mutex_trylock);
+  LIB_FUNCTION("K-jXhbt2gn4", "libScePosix", 1, "libkernel",
+               posix_pthread_mutex_trylock);
   LIB_FUNCTION("tn3VlD0hG60", "libkernel", 1, "libkernel",
                posix_pthread_mutex_unlock);
   LIB_FUNCTION("2Of0f+3mhhE", "libkernel", 1, "libkernel",
@@ -843,6 +975,8 @@ void RegisterLibKernel(::Core::Kernel::ModuleManager *module_manager) {
                posix_pthread_mutex_lock);
   LIB_FUNCTION("2Z+PpY6CaJg", "libScePosix", 1, "libkernel",
                posix_pthread_mutex_unlock);
+  LIB_FUNCTION("ltCfaGr2JGE", "libScePosix", 1, "libkernel",
+               posix_pthread_mutex_destroy);
 
   // Condition Variables
   LIB_FUNCTION("2Tb92quprl0", "libkernel", 1, "libkernel", scePthreadCondInit);
@@ -860,6 +994,26 @@ void RegisterLibKernel(::Core::Kernel::ModuleManager *module_manager) {
                posix_pthread_cond_broadcast);
   LIB_FUNCTION("2MOy+rUfuhQ", "libScePosix", 1, "libkernel",
                posix_pthread_cond_signal);
+
+  // Thread-Local Storage (pthread_key)
+  LIB_FUNCTION("geDaqgH9lTg", "libkernel", 1, "libkernel",
+               posix_pthread_key_create);
+  LIB_FUNCTION("mqULNdimTn0", "libScePosix", 1, "libkernel",
+               posix_pthread_key_create);
+  LIB_FUNCTION("mqULNdimTn0", "libkernel", 1, "libkernel",
+               posix_pthread_key_create);
+  LIB_FUNCTION("PrdHuuDekhY", "libkernel", 1, "libkernel",
+               posix_pthread_key_delete);
+  LIB_FUNCTION("eoht7mQOCmo", "libkernel", 1, "libkernel",
+               posix_pthread_getspecific);
+  LIB_FUNCTION("+BzXYkqYeLE", "libkernel", 1, "libkernel",
+               posix_pthread_setspecific);
+  LIB_FUNCTION("WrOLvHU0yQM", "libScePosix", 1, "libkernel",
+               posix_pthread_setspecific);
+  LIB_FUNCTION("0-KXaS70xy4", "libScePosix", 1, "libkernel",
+               posix_pthread_getspecific);
+  LIB_FUNCTION("0-KXaS70xy4", "libkernel", 1, "libkernel",
+               posix_pthread_getspecific);
 
   // Semaphores
   LIB_FUNCTION("188x57JYp0g", "libkernel", 1, "libkernel", sceKernelCreateSema);
