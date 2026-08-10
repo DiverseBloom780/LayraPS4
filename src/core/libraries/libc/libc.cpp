@@ -124,6 +124,12 @@ void __cxa_guard_release(uint64_t* guard_object) {
     *guard = 1; // Mark as initialized
 }
 
+// __cxa_atexit - registers a destructor to be called at exit
+int __cxa_atexit_impl(void (*destructor)(void*), void *arg, void *dso_handle) {
+    // Accept the registration but no need to call destructors in an emulator
+    return 0;
+}
+
 #define LIB_FUNCTION(nid, library, version, module, function)                  \
   module_manager->RegisterHLEExport(module, nid, #function,                    \
                                     reinterpret_cast<uint64_t>(function));
